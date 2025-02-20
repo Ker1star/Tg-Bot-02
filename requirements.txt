@@ -6,5 +6,4 @@ sqlalchemy
 aiohttp
 alembic
 pydantic
-python-telegram-bot
 psycopg2-binary

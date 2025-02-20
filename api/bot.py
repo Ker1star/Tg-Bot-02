@@ -54,8 +54,8 @@ async def telegram_webhook(request: Request, token: str):
     try:
         data = await request.json()
         logger.debug(f"Data received: {data}")
-        update = Update(**data)  # Преобразование данных в объект Update
-        await dp.process_update(update)  # Используем process_update для обработки обновлений
+        update = Update(**data)
+        await dp.handle_update(update)  # Используем handle_update для обработки обновлений
         return {"ok": True}
     except Exception as e:
         logger.error(f"Error processing webhook: {e}")

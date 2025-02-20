@@ -10,6 +10,7 @@ from handlers import admin, client
 from utils.database import init_db
 from fastapi.middleware.cors import CORSMiddleware
 
+
 logging.basicConfig(level=logging.INFO)
 
 
@@ -53,8 +54,8 @@ async def telegram_webhook(request: Request, token: str):
     try:
         data = await request.json()
         logger.debug(f"Data received: {data}")
-        update = Update(**data)
-        await dp.feed_update(update)
+        update = Update(**data)  # Преобразование данных в объект Update
+        await dp.process_update(update)  # Используйте process_update вместо feed_update
         return {"ok": True}
     except Exception as e:
         logger.error(f"Error processing webhook: {e}")

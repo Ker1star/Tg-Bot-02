@@ -29,7 +29,7 @@ async def lifespan(app: FastAPI):
     await bot.set_webhook(f"{WEBHOOK_HOST}/webhook/{API_TOKEN}")
     logging.info(f"Webhook установлен: {WEBHOOK_URL}")
     yield
-    await bot.delete_webhook()
+    await bot.delete_webhook() #удалить после завершения работы
     await bot.session.close()  # закрытие сессии после завершения работы приложения
 
 app = FastAPI(lifespan=lifespan)

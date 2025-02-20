@@ -16,7 +16,7 @@ logging.basicConfig(level=logging.INFO)
 
 
 bot = Bot(token=API_TOKEN)
-dp = Dispatcher()
+dp = Dispatcher(bot)
 
 dp.include_router(admin.router)
 dp.include_router(client.router)

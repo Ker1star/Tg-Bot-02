@@ -7,3 +7,4 @@ aiohttp
 alembic
 pydantic
 python-telegram-bot
+Psycopg2

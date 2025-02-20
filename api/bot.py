@@ -18,11 +18,8 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
-# Включаем роутеры только если они ещё не прикреплены
-if admin.router.parent_router is None:
-    dp.include_router(admin.router)
-if client.router.parent_router is None:
-    dp.include_router(client.router)
+dp.include_router(admin.router)
+dp.include_router(client.router)
 
 init_db()
 
@@ -32,6 +29,7 @@ async def lifespan(app: FastAPI):
     await bot.set_webhook(f"{WEBHOOK_HOST}/webhook/{API_TOKEN}")
     logging.info(f"Webhook установлен: {WEBHOOK_URL}")
     yield
+    await bot.delete_webhook()
     await bot.session.close()  # закрытие сессии после завершения работы приложения
 
 app = FastAPI(lifespan=lifespan)
@@ -41,8 +39,6 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"])
 async def read_root():
     return {"message": "Hello, World!"}
 
-
-logging.basicConfig(level=logging.DEBUG)
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +51,7 @@ async def telegram_webhook(request: Request, token: str):
         data = await request.json()
         logger.debug(f"Data received: {data}")
         update = Update(**data)
-        await dp.feed_update(bot, update)  # Используем для обработки обновлений
+        asyncio.create_task(dp.feed_update(bot, update))
         return {"ok": True}
     except Exception as e:
         logger.error(f"Error processing webhook: {e}")

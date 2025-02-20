@@ -25,7 +25,7 @@ init_db()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await bot.delete_webhook()  # очистить старый вебхук
+    #await bot.delete_webhook()  # очистить старый вебхук
     await bot.set_webhook(f"{WEBHOOK_HOST}/webhook/{API_TOKEN}")
     logging.info(f"Webhook установлен: {WEBHOOK_URL}")
     yield

@@ -25,11 +25,11 @@ init_db()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await bot.set_webhook(WEBHOOK_URL)
-    logging.info(f"Webhook установлен: {WEBHOOK_URL}")
-    yield
-    await bot.delete_webhook()
-    logging.info("Webhook удалён")
+    try:
+        await bot.set_webhook(WEBHOOK_URL)
+        logging.info(f"Webhook установлен: {WEBHOOK_URL}")
+    except Exception as e:
+        logging.error(f"Ошибка при установке вебхука: {e}")
 
 app = FastAPI(lifespan=lifespan)
 
@@ -45,6 +45,6 @@ async def telegram_webhook(request: Request):
     asyncio.create_task(dp.feed_update(update))
     return {"ok": True}
 
-if __name__ == '__main__':
-    import uvicorn
-    uvicorn.run("api.bot:app", host="0.0.0.0", port=8000, log_level="info")
+#if __name__ == '__main__':
+    #import uvicorn
+    #uvicorn.run("api.bot:app", host="0.0.0.0", port=8000, log_level="info")

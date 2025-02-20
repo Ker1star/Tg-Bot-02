@@ -8,8 +8,10 @@ from aiogram.types import Update
 from config import API_TOKEN, WEBHOOK_PATH, WEBHOOK_URL
 from handlers import admin, client
 from utils.database import init_db
+from fastapi.middleware.cors import CORSMiddleware
 
 logging.basicConfig(level=logging.INFO)
+
 
 
 bot = Bot(token=API_TOKEN)
@@ -27,13 +29,14 @@ init_db()
 async def lifespan(app: FastAPI):
     await bot.delete_webhook()  # очистить старый вебхук
     await bot.set_webhook(
-        url=WEBHOOK_URL,
-        secret_token=API_TOKEN  # опционально для безопасности
+        url= WEBHOOK_URL,
+        secret_token= API_TOKEN  # опционально для безопасности
     )
     logging.info(f"Webhook установлен: {WEBHOOK_URL}")
     yield
     await bot.session.close()
 app = FastAPI(lifespan=lifespan)
+app.add_middleware(CORSMiddleware, allow_origins=["*"])
 
 @app.get("/")
 async def read_root():

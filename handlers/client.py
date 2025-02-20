@@ -18,13 +18,6 @@ def get_main_menu_keyboard() -> ReplyKeyboardMarkup:
     ]
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
 
-@router.message(Command("start"))
-async def start_handler(message: types.Message, state: FSMContext):
-    # Регистрация пользователя и вывод приветственного сообщения с главным меню
-    # ... (логика регистрации остаётся без изменений)
-    await message.answer("👋 Добро пожаловать!\nВыберите команду из меню ниже:", 
-                         reply_markup=get_main_menu_keyboard())
-
 # Обработчик для кнопки "Пройти тест"
 @router.message(lambda message: message.text == "Пройти тест")
 async def handle_pass_test(message: types.Message, state: FSMContext):

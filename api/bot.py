@@ -49,9 +49,7 @@ async def telegram_webhook(request: Request, token: str):
         logger.warning("Invalid token")
         return {"ok": False}
     try:
-        data = await request.json()
-        logger.debug(f"Data received: {data}")
-        update = Update(**data)
+        update = await request.json()
         await dp.feed_update(bot, update)
         return {"ok": True}
     except Exception as e:

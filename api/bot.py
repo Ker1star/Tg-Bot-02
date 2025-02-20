@@ -47,12 +47,11 @@ logging.basicConfig(level=logging.DEBUG)
 
 logger = logging.getLogger(__name__)
 
-@app.post("/webhook")
+@app.post("/webhook/{token}")  # токен из URL, а не query-параметра
 async def telegram_webhook(request: Request, token: str):
-    logger.debug(f"Received webhook call with token {token}")
     if token != API_TOKEN:
-        logger.warning(f"Invalid token: {token}")
-        return {"ok": False, "error": "Invalid token"}
+        logger.warning("Invalid token")
+        return {"ok": False}
     try:
         data = await request.json()
         logger.debug(f"Data received: {data}")

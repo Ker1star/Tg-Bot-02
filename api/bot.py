@@ -40,10 +40,14 @@ async def read_root():
 
 @app.post(WEBHOOK_PATH)
 async def telegram_webhook(request: Request):
-    data = await request.json()
-    update = Update(**data)
-    asyncio.create_task(dp.feed_update(update))
-    return {"ok": True}
+    try:
+        data = await request.json()
+        update = Update(**data)
+        await dp.feed_update(update)
+        return {"ok": True}
+    except Exception as e:
+        logging.error(f"Ошибка при обработке webhook: {e}")
+        return {"ok": False, "error": str(e)}
 
 #if __name__ == '__main__':
     #import uvicorn

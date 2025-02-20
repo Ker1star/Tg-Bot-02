@@ -8,4 +8,4 @@ ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 DATABASE_URL = os.getenv("DATABASE_URL")
 WEBHOOK_HOST = os.getenv("WEBHOOK_HOST") 
 WEBHOOK_PATH = f"/webhook"
-WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
+WEBHOOK_URL = f"{WEBHOOK_HOST}/webhook"

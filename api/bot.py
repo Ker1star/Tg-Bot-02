@@ -11,6 +11,7 @@ from utils.database import init_db
 
 logging.basicConfig(level=logging.INFO)
 
+
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
@@ -31,6 +32,11 @@ async def lifespan(app: FastAPI):
     logging.info("Webhook удалён")
 
 app = FastAPI(lifespan=lifespan)
+
+@app.get("/")
+async def read_root():
+    return {"message": "Hello, World!"}
+
 
 @app.post(WEBHOOK_PATH)
 async def telegram_webhook(request: Request):

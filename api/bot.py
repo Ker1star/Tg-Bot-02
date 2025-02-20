@@ -43,16 +43,14 @@ async def read_root():
     return {"message": "Hello, World!"}
 
 
-@app.post(WEBHOOK_PATH)
-async def telegram_webhook(request: Request):
-    try:
-        data = await request.json()
-        update = Update(**data)
-        await dp.feed_update(update)
-        return {"ok": True}
-    except Exception as e:
-        logging.error(f"Ошибка при обработке webhook: {e}")
-        return {"ok": False, "error": str(e)}
+@app.post("/webhook/{token}")
+async def telegram_webhook(request: Request, token: str):
+    if token != API_TOKEN:
+        return {"ok": False, "error": "Invalid token"}
+    data = await request.json()
+    update = Update(**data)
+    await dp.feed_update(update)
+    return {"ok": True}
 
 if __name__ == '__main__':
     import uvicorn

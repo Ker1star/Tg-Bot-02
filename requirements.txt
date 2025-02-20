@@ -7,4 +7,4 @@ aiohttp
 alembic
 pydantic
 python-telegram-bot
-Psycopg2
+psycopg2-binary

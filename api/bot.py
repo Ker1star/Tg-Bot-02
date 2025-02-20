@@ -51,7 +51,7 @@ async def telegram_webhook(request: Request, token: str):
     try:
         update = await request.json()
         update_obj = Update(**update)  # Преобразуем словарь в объект Update
-        await dp.feed_update(update_obj)  # Передаем объект update в feed_update
+        await dp.feed_update(bot, update_obj)  # Передаем объект update в feed_update
         return {"ok": True}
     except Exception as e:
         logger.error(f"Error processing webhook: {e}")

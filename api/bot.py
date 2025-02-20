@@ -52,7 +52,7 @@ async def telegram_webhook(request: Request, token: str):
         data = await request.json()
         logger.debug(f"Data received: {data}")
         update = Update(**data)
-        asyncio.create_task(dp.feed_update(bot, update))
+        await dp.feed_update(bot, update)
         return {"ok": True}
     except Exception as e:
         logger.error(f"Error processing webhook: {e}")

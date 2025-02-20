@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+aiogram
+python-dotenv
+sqlalchemy
+aiohttp
+alembic
+pydantic
+python-telegram-bot

@@ -43,23 +43,24 @@ async def read_root():
     return {"message": "Hello, World!"}
 
 
+logging.basicConfig(level=logging.DEBUG)
+
+logger = logging.getLogger(__name__)
+
 @app.post("/webhook/{token}")
 async def telegram_webhook(request: Request, token: str):
+    logger.debug(f"Received webhook call with token {token}")
     if token != API_TOKEN:
-        logging.error(f"Invalid token: {token}")
+        logger.warning(f"Invalid token: {token}")
         return {"ok": False, "error": "Invalid token"}
-    
     try:
-        data = await request.json()  # Получаем данные от Telegram
-        logging.info(f"Received data: {data}")  # Логируем данные
-        
-        # Преобразуем данные в объект Update
+        data = await request.json()
+        logger.debug(f"Data received: {data}")
         update = Update(**data)
         await dp.feed_update(update)
-        
         return {"ok": True}
     except Exception as e:
-        logging.error(f"Error processing webhook: {e}")
+        logger.error(f"Error processing webhook: {e}")
         return {"ok": False, "error": str(e)}
 
 #if __name__ == '__main__':

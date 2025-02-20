@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from aiogram import Bot, Dispatcher
 from aiogram.types import Update
-from config import API_TOKEN, WEBHOOK_PATH, WEBHOOK_URL
+from config import API_TOKEN, WEBHOOK_PATH, WEBHOOK_URL, WEBHOOK_HOST
 from handlers import admin, client
 from utils.database import init_db
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,9 +28,7 @@ init_db()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await bot.delete_webhook()  # очистить старый вебхук
-    await bot.set_webhook(
-        url=WEBHOOK_URL
-    )
+    await bot.set_webhook(f"{WEBHOOK_HOST}/webhook/{API_TOKEN}")
     logging.info(f"Webhook установлен: {WEBHOOK_URL}")
     yield
     await bot.session.close()  # закрытие сессии после завершения работы приложения

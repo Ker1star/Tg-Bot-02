@@ -47,7 +47,7 @@ logging.basicConfig(level=logging.DEBUG)
 
 logger = logging.getLogger(__name__)
 
-@app.post("/webhook/{token}")
+@app.post("/webhook")
 async def telegram_webhook(request: Request, token: str):
     logger.debug(f"Received webhook call with token {token}")
     if token != API_TOKEN:

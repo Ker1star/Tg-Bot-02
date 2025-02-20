@@ -18,8 +18,8 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
-dp.include_router(admin.router)
-dp.include_router(client.router)
+#dp.include_router(admin.router)
+#dp.include_router(client.router)
 
 init_db()
 
@@ -35,7 +35,6 @@ async def lifespan(app: FastAPI):
     await bot.delete_webhook() #удалить после завершения работы
 
 app = FastAPI(lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=["*"])
 
 @app.post("/webhook/{token}")  # токен из URL, а не query-параметра
 async def telegram_webhook(request: Request, token: str):

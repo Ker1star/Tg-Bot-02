@@ -31,7 +31,6 @@ async def lifespan(app: FastAPI):
     logging.info(f"Webhook установлен: {WEBHOOK_URL}")
     yield
     await bot.delete_webhook() #удалить после завершения работы
-    await bot.session.close()  # закрытие сессии после завершения работы приложения
 
 app = FastAPI(lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"])

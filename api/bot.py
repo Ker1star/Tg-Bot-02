@@ -18,23 +18,20 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 dp["_startup_log"] = True  # Логирует зарегистрированные обработчики
-dp.include_router(admin.router)
-dp.include_router(client.router)
 
 
 init_db()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    try:
-        
+        dp.include_router(admin.router)
+        dp.include_router(client.router)
         await bot.set_webhook(f"{WEBHOOK_HOST}/webhook/{API_TOKEN}", drop_pending_updates=True)
         logging.info(f"Webhook установлен: {WEBHOOK_URL}")
+        logging.info(f"Webhook установлен: {WEBHOOK_URL}")
         yield
-    except Exception as e:
-        logging.error(f"Ошибка в lifespan: {e}")
-    finally:
-        await bot.delete_webhook()  # Удаляем вебхук, когда приложение завершает работу
+        await bot.delete_webhook()  # Удаляем вебхук только после завершения работы приложения
+
 app = FastAPI(lifespan=lifespan)
 
 @app.post("/webhook/{token}")  # токен из URL, а не query-параметра
@@ -44,12 +41,15 @@ async def telegram_webhook(request: Request, token: str):
         logging.info(f"Получено обновление: {update}")
         update_obj = Update(**update)  # Преобразуем словарь в объект Update
         loop = asyncio.get_event_loop()
+
+        logging.info("Цикл событий активен.")
+
         await loop.create_task(dp.feed_update(bot, update_obj))
         return {"ok": True}
     except Exception as e:
         logging.error(f"Ошибка при обработке обновления: {e}")
         return {"ok": False, "error": str(e)}
 
-#if __name__ == '__main__':
-   # import uvicorn
-    #uvicorn.run("api.bot:app", host="0.0.0.0", port=8000, log_level="info")
+if __name__ == '__main__':
+   import uvicorn
+uvicorn.run("api.bot:app", host="0.0.0.0", port=8000, log_level="info")

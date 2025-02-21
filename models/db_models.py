@@ -1,5 +1,5 @@
 from sqlalchemy import create_engine, Column, Integer, BigInteger, String, DateTime, ForeignKey, Boolean, Text
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 from datetime import datetime
 from config import DATABASE_URL
@@ -8,10 +8,7 @@ from config import DATABASE_URL
 engine = create_async_engine(DATABASE_URL, echo=True, pool_pre_ping=True)
 
 # Асинхронная сессия
-SessionLocal = sessionmaker(
-    bind=engine, class_=AsyncSession, expire_on_commit=False
-)
-
+async_session = async_sessionmaker(engine, expire_on_commit=False)
 Base = declarative_base()
 
 # Модель пользователя
@@ -82,6 +79,6 @@ class UserProgress(Base):
     test = relationship("Test")
 
 # Инициализация базы данных
-async def init_db():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+async def get_db():
+    async with async_session() as session:
+        yield session

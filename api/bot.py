@@ -8,16 +8,17 @@ from config import API_TOKEN, WEBHOOK_PATH, WEBHOOK_URL, WEBHOOK_HOST
 from handlers.admin import router as admin_router
 from handlers.client import router as client_router
 from utils.database import init_db
-from fastapi.middleware.cors import CORSMiddleware
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
 
 
 logging.basicConfig(level=logging.INFO)
 
 
 
-bot = Bot(token=API_TOKEN)
+bot = Bot(token=API_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
-dp["_startup_log"] = True  # Логирует зарегистрированные обработчики
+
 
 
 init_db()
@@ -26,6 +27,7 @@ init_db()
 async def lifespan(app: FastAPI):
         dp.include_router(admin_router)
         dp.include_router(client_router)
+        dp["_startup_log"] = True  # Логирует зарегистрированные обработчики
         await bot.set_webhook(f"{WEBHOOK_HOST}/webhook/{API_TOKEN}", drop_pending_updates=True)
         logging.info(f"Webhook установлен: {WEBHOOK_URL}")
         yield
@@ -34,11 +36,6 @@ async def lifespan(app: FastAPI):
         logging.info("Webhook deleted")
 
 app = FastAPI(lifespan=lifespan)
-
-@app.on_event("startup")
-async def startup_event():
-    # Инициализация базы данных
-    await init_db()
 
 @app.post("/webhook/{token}")  # токен из URL, а не query-параметра
 async def telegram_webhook(request: Request, token: str):

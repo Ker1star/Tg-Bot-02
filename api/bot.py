@@ -26,6 +26,8 @@ async def lifespan(app: FastAPI):
         dp["_startup_log"] = True  # Логирует зарегистрированные обработчики
         await bot.set_webhook(f"{WEBHOOK_HOST}/webhook/{API_TOKEN}", drop_pending_updates=True)
         logging.info(f"Webhook установлен: {WEBHOOK_URL}")
+        webhook_info = await bot.get_webhook_info()
+        logging.info(f"Webhook info: {webhook_info}")
         yield
         logging.info("Shutting down bot...")
         await bot.delete_webhook()  # Удаляем вебхук только после завершения работы приложения

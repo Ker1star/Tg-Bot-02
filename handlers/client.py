@@ -4,9 +4,10 @@ from models.db_models import SessionLocal, User, Question, Test
 from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 from sqlalchemy.exc import SQLAlchemyError
-import html
+import html, logging
 
 router = Router()
+logger = logging.getLogger(__name__)
 
 def get_main_menu_keyboard() -> ReplyKeyboardMarkup:
     """
@@ -39,6 +40,7 @@ async def handle_cancel(message: types.Message, state: FSMContext):
 
 @router.message(Command("start"))
 async def start_handler(message: types.Message, state: FSMContext):
+    logging.info(f"Команда /start от {message.from_user.username}")
     session = SessionLocal()
     user = session.query(User).filter(User.telegram_id == message.from_user.id).first()
     if not user:

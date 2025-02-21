@@ -41,7 +41,8 @@ async def telegram_webhook(request: Request, token: str):
         update = await request.json()
         logging.info(f"Получено обновление: {update}")
         update_obj = Update(**update)  # Преобразуем словарь в объект Update
-        await dp.feed_update(bot, update_obj)  # Передаем объект update в feed_update
+        loop = asyncio.get_event_loop()
+        await loop.create_task(dp.feed_update(bot, update_obj))
         return {"ok": True}
     except Exception as e:
         logging.error(f"Ошибка при обработке обновления: {e}")

@@ -28,7 +28,6 @@ async def lifespan(app: FastAPI):
         dp.include_router(client.router)
         await bot.set_webhook(f"{WEBHOOK_HOST}/webhook/{API_TOKEN}", drop_pending_updates=True)
         logging.info(f"Webhook установлен: {WEBHOOK_URL}")
-        logging.info(f"Webhook установлен: {WEBHOOK_URL}")
         yield
         await bot.delete_webhook()  # Удаляем вебхук только после завершения работы приложения
 
@@ -50,6 +49,3 @@ async def telegram_webhook(request: Request, token: str):
         logging.error(f"Ошибка при обработке обновления: {e}")
         return {"ok": False, "error": str(e)}
 
-if __name__ == '__main__':
-   import uvicorn
-uvicorn.run("api.bot:app", host="0.0.0.0", port=8000, log_level="info")

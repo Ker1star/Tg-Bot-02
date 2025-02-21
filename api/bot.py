@@ -18,6 +18,8 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 dp["_startup_log"] = True  # Логирует зарегистрированные обработчики
+dp.include_router(admin.router)
+dp.include_router(client.router)
 
 
 init_db()
@@ -25,8 +27,6 @@ init_db()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     #await bot.delete_webhook()  # очистить старый вебхук
-    dp.include_router(admin.router)
-    dp.include_router(client.router)
     await bot.set_webhook(f"{WEBHOOK_HOST}/webhook/{API_TOKEN}",
                           drop_pending_updates=True)
     logging.info(f"Webhook установлен: {WEBHOOK_URL}")

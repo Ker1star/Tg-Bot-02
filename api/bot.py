@@ -1,7 +1,7 @@
 import asyncio
 import logging
+import uvicorn
 from contextlib import asynccontextmanager
-
 from fastapi import FastAPI, Request
 from aiogram import Bot, Dispatcher
 from aiogram.types import Update

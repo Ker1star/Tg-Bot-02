@@ -18,21 +18,22 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 dp["_startup_log"] = True  # Логирует зарегистрированные обработчики
-dp.include_router(admin.router)
-dp.include_router(client.router)
 
 
 init_db()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    #await bot.delete_webhook()  # очистить старый вебхук
-    await bot.set_webhook(f"{WEBHOOK_HOST}/webhook/{API_TOKEN}",
-                          drop_pending_updates=True)
-    logging.info(f"Webhook установлен: {WEBHOOK_URL}")
-    yield
-    await bot.delete_webhook() #удалить после завершения работы
-
+    try:
+        dp.include_router(admin.router)
+        dp.include_router(client.router)
+        await bot.set_webhook(f"{WEBHOOK_HOST}/webhook/{API_TOKEN}", drop_pending_updates=True)
+        logging.info(f"Webhook установлен: {WEBHOOK_URL}")
+        yield
+    except Exception as e:
+        logging.error(f"Ошибка в lifespan: {e}")
+    finally:
+        await bot.delete_webhook()  # Удаляем вебхук, когда приложение завершает работу
 app = FastAPI(lifespan=lifespan)
 
 @app.post("/webhook/{token}")  # токен из URL, а не query-параметра

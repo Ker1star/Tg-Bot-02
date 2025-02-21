@@ -30,7 +30,9 @@ async def lifespan(app: FastAPI):
         await bot.set_webhook(f"{WEBHOOK_HOST}/webhook/{API_TOKEN}", drop_pending_updates=True)
         logging.info(f"Webhook установлен: {WEBHOOK_URL}")
         yield
+        logging.info("Shutting down bot...")
         await bot.delete_webhook()  # Удаляем вебхук только после завершения работы приложения
+        logging.info("Webhook deleted")
 
 app = FastAPI(lifespan=lifespan)
 
@@ -45,6 +47,7 @@ async def telegram_webhook(request: Request, token: str):
         logging.info("Цикл событий активен.")
 
         await loop.create_task(dp.feed_update(bot, update_obj))
+        logging.info("Вроде норм.")
         return {"ok": True}
     except Exception as e:
         logging.error(f"Ошибка при обработке обновления: {e}")

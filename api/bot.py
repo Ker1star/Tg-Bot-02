@@ -6,7 +6,8 @@ from fastapi import FastAPI, Request
 from aiogram import Bot, Dispatcher
 from aiogram.types import Update
 from config import API_TOKEN, WEBHOOK_PATH, WEBHOOK_URL, WEBHOOK_HOST
-from handlers import admin, client
+from handlers.admin import router as admin_router
+from handlers.client import router as client_router
 from utils.database import init_db
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -24,8 +25,8 @@ init_db()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-        dp.include_router(admin.router)
-        dp.include_router(client.router)
+        dp.include_router(admin_router)
+        dp.include_router(client_router)
         await bot.set_webhook(f"{WEBHOOK_HOST}/webhook/{API_TOKEN}", drop_pending_updates=True)
         logging.info(f"Webhook установлен: {WEBHOOK_URL}")
         yield

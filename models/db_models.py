@@ -1,15 +1,17 @@
-# models/db_models.py
 from sqlalchemy import create_engine, Column, Integer, BigInteger, String, DateTime, ForeignKey, Boolean, Text
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 from datetime import datetime
 from config import DATABASE_URL
 
-# Инициализация движка и сессии
-engine = create_engine(DATABASE_URL, pool_pre_ping=True,     # Проверяет соединение перед использованием
-    pool_recycle=3600)       # Опционально: раз в час сбрасывать соединения, чтобы избежать разрыва "зависших" соединений)
-SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+# Асинхронный движок для базы данных
+engine = create_async_engine(DATABASE_URL, echo=True, pool_pre_ping=True)
 
-# Базовый класс для моделей
+# Асинхронная сессия
+SessionLocal = sessionmaker(
+    bind=engine, class_=AsyncSession, expire_on_commit=False
+)
+
 Base = declarative_base()
 
 # Модель пользователя
@@ -20,7 +22,7 @@ class User(Base):
     first_name = Column(String(255))
     last_name = Column(String(255))
     registration_date = Column(DateTime, default=datetime.utcnow)
-    is_active = Column(Boolean, default=True)  # Мягкое удаление
+    is_active = Column(Boolean, default=True)
 
     # Связь: у пользователя может быть много ответов
     answers = relationship("Answer", back_populates="user", cascade="all, delete-orphan")
@@ -42,16 +44,14 @@ class Question(Base):
     id = Column(Integer, primary_key=True, index=True)
     test_id = Column(Integer, ForeignKey('tests.id'), nullable=False)
     question_text = Column(Text, nullable=False)
-    correct_answer = Column(String(1), nullable=False)  # Ожидается один символ: "A", "B", "C" или "D"
+    correct_answer = Column(String(1), nullable=False)
     option_a = Column(String(255), nullable=False)
     option_b = Column(String(255), nullable=False)
     option_c = Column(String(255), nullable=False)
     option_d = Column(String(255), nullable=False)
     is_active = Column(Boolean, default=True)
 
-    # Отношение к тесту, которому принадлежит вопрос
     test = relationship("Test", back_populates="questions")
-    # Связь: у вопроса может быть много ответов
     answers = relationship("Answer", back_populates="question", cascade="all, delete-orphan")
 
 # Модель ответа
@@ -64,9 +64,10 @@ class Answer(Base):
     is_correct = Column(Boolean, nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow)
 
-    # Связи для удобного доступа к данным пользователя и вопроса
     user = relationship("User", back_populates="answers")
     question = relationship("Question", back_populates="answers")
+
+# Модель прогресса пользователя в тесте
 class UserProgress(Base):
     __tablename__ = 'user_progress'
     id = Column(Integer, primary_key=True, index=True)
@@ -77,6 +78,10 @@ class UserProgress(Base):
     started_at = Column(DateTime, default=datetime.utcnow)
     finished_at = Column(DateTime)
 
-    # Отношения (опционально)
     user = relationship("User")
     test = relationship("Test")
+
+# Инициализация базы данных
+async def init_db():
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)

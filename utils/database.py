@@ -1,4 +1,6 @@
 from models.db_models import engine, Base
 
-def init_db():
-    Base.metadata.create_all(bind=engine)
+async def init_db():
+    async with engine.begin() as conn:
+        # Создаём все таблицы, если они еще не созданы
+        await conn.run_sync(Base.metadata.create_all)

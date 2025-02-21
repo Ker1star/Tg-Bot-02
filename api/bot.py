@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import uvicorn
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from aiogram import Bot, Dispatcher
@@ -35,6 +34,11 @@ async def lifespan(app: FastAPI):
         logging.info("Webhook deleted")
 
 app = FastAPI(lifespan=lifespan)
+
+@app.on_event("startup")
+async def startup_event():
+    # Инициализация базы данных
+    await init_db()
 
 @app.post("/webhook/{token}")  # токен из URL, а не query-параметра
 async def telegram_webhook(request: Request, token: str):

@@ -40,10 +40,12 @@ app = FastAPI(lifespan=lifespan)
 async def telegram_webhook(request: Request, token: str):
     try:
         update = await request.json()
+        logging.info(f"Получено обновление: {update}")
         update_obj = Update(**update)  # Преобразуем словарь в объект Update
         await dp.feed_update(bot, update_obj)  # Передаем объект update в feed_update
         return {"ok": True}
     except Exception as e:
+        logging.error(f"Ошибка при обработке обновления: {e}")
         return {"ok": False, "error": str(e)}
 
 #if __name__ == '__main__':

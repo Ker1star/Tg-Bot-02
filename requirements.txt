@@ -6,6 +6,5 @@ sqlalchemy
 aiohttp
 alembic
 pydantic
-psycopg2-binary
 cors
 asyncpg

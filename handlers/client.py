@@ -4,6 +4,7 @@ from models.db_models import SessionLocal, User, Question, Test
 from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.future import select
 import html, logging
 
 router = Router()
@@ -41,28 +42,30 @@ async def handle_cancel(message: types.Message, state: FSMContext):
 @router.message(Command("start"))
 async def start_handler(message: types.Message, state: FSMContext):
     logging.info(f"Команда /start от {message.from_user.username}")
-    session = SessionLocal()
-    user = session.query(User).filter(User.telegram_id == message.from_user.id).first()
-    if not user:
-        new_user = User(
-            telegram_id=message.from_user.id,
-            first_name=message.from_user.first_name,
-            last_name=message.from_user.last_name or ""
-        )
-        session.add(new_user)
-        session.commit()
-        await message.answer("🎉 Вы успешно зарегистрированы!\nВыберите команду из меню ниже:", 
-                             reply_markup=get_main_menu_keyboard())
-    else:
-        await message.answer("👋 Добро пожаловать!\nВыберите команду из меню ниже:", 
-                             reply_markup=get_main_menu_keyboard())
-    session.close()
+    async with SessionLocal() as session:
+        user = await session.execute(select(User).filter(User.telegram_id == message.from_user.id))
+        user = user.scalar_one_or_none()
+        
+        if not user:
+            new_user = User(
+                telegram_id=message.from_user.id,
+                first_name=message.from_user.first_name,
+                last_name=message.from_user.last_name or ""
+            )
+            session.add(new_user)
+            await session.commit()
+            await message.answer("🎉 Вы успешно зарегистрированы!\nВыберите команду из меню ниже:", 
+                                 reply_markup=get_main_menu_keyboard())
+        else:
+            await message.answer("👋 Добро пожаловать!\nВыберите команду из меню ниже:", 
+                                 reply_markup=get_main_menu_keyboard())
 
 @router.message(Command("test"))
 async def start_test(message: types.Message, state: FSMContext):
     try:
-        with SessionLocal() as session:
-            tests = session.query(Test).filter(Test.is_active == True).all()
+        async with SessionLocal() as session:
+            tests = await session.execute(select(Test).filter(Test.is_active == True))
+            tests = tests.scalars().all()
         if not tests:
             await message.answer("Нет доступных тестов.")
             return
@@ -80,8 +83,9 @@ async def start_test(message: types.Message, state: FSMContext):
 async def start_test_callback(callback: types.CallbackQuery, state: FSMContext):
     test_id = int(callback.data.split("_")[-1])
     try:
-        with SessionLocal() as session:
-            questions = session.query(Question).filter(Question.test_id == test_id, Question.is_active == True).all()
+        async with SessionLocal() as session:
+            questions = await session.execute(select(Question).filter(Question.test_id == test_id, Question.is_active == True))
+            questions = questions.scalars().all()
         if not questions:
             await callback.message.answer("В этом тесте пока нет вопросов.")
             return
@@ -90,7 +94,7 @@ async def start_test_callback(callback: types.CallbackQuery, state: FSMContext):
             "id": q.id,
             "text": q.question_text,
             "options": [q.option_a, q.option_b, q.option_c, q.option_d],
-            "correct": q.correct_answer  # Ожидается буква
+            "correct": q.correct_answer
         } for q in questions]
         await state.update_data(test_id=test_id, questions=questions_data, current_index=0, score=0)
         await send_current_question(callback.message, state)

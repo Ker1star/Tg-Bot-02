@@ -17,9 +17,8 @@ logging.basicConfig(level=logging.INFO)
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
+dp["_startup_log"] = True  # Логирует зарегистрированные обработчики
 
-#dp.include_router(admin.router)
-#dp.include_router(client.router)
 
 init_db()
 

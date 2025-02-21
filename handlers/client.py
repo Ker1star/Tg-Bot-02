@@ -149,3 +149,6 @@ async def next_question_callback(callback: types.CallbackQuery, state: FSMContex
     current_index = data.get("current_index", 0) + 1
     await state.update_data(current_index=current_index)
     await send_current_question(callback.message, state)
+@router.message()
+async def handle_unexpected(message: types.Message):
+    await message.answer("Неизвестная команда. Используйте кнопки меню.")

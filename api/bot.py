@@ -19,10 +19,6 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(token=API_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
-
-
-init_db()
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
         dp.include_router(admin_router)

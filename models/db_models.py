@@ -12,8 +12,17 @@ SessionLocal = sessionmaker(
     bind=engine, class_=AsyncSession, expire_on_commit=False
 )
 
-Base = declarative_base()
 
+# Перезапуск сессии и подключений
+async def restart_session():
+    # Закрытие текущих соединений
+    await engine.dispose()
+    engine = create_async_engine(DATABASE_URL, echo=True, pool_pre_ping=True)
+    SessionLocal = sessionmaker(
+    bind=engine, class_=AsyncSession, expire_on_commit=False)
+    return SessionLocal
+
+Base = declarative_base()
 # Модель пользователя
 class User(Base):
     __tablename__ = 'users'
@@ -26,6 +35,7 @@ class User(Base):
 
     # Связь: у пользователя может быть много ответов
     answers = relationship("Answer", back_populates="user", cascade="all, delete-orphan")
+    Userprogress = relationship("UserProgress", back_populates="user", cascade="all, delete-orphan")
 
 # Модель теста
 class Test(Base):
@@ -81,7 +91,16 @@ class UserProgress(Base):
     user = relationship("User")
     test = relationship("Test")
 
+class Materials(Base):
+    __tablename__ = '_materials_'
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False)
+    description = Column(Text)
+    file = Column(String(1024), nullable=False)
+    is_active = Column(Boolean, default=True)
+
 # Инициализация базы данных
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+

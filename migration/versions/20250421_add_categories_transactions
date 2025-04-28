@@ -1,0 +1,56 @@
+"""add categories and transactions
+
+Revision ID: 20250421_add_categories_transactions
+Revises: <your_previous_revision_id>
+Create Date: 2025-04-21 12:00:00.000000
+
+"""
+from alembic import op
+import sqlalchemy as sa
+
+# revision identifiers, used by Alembic.
+revision = '20250421_add_categories_transactions'
+down_revision = '33be73065b36'
+branch_labels = None
+depends_on = None
+
+
+def upgrade():
+    # 1) Создаём таблицу categories
+    op.create_table(
+        'categories',
+        sa.Column('id', sa.Integer(), primary_key=True, index=True),
+        sa.Column('name', sa.String(length=100), nullable=False, unique=True),
+    )
+
+    # 2) Добавляем category_id в products и FK
+    op.add_column('products', sa.Column('category_id', sa.Integer(), nullable=True))
+    op.create_foreign_key(
+        'fk_products_category',
+        'products', 'categories',
+        ['category_id'], ['id'],
+        ondelete='SET NULL'
+    )
+
+    # 3) Создаём таблицу transactions
+    op.create_table(
+        'transactions',
+        sa.Column('id', sa.Integer(), primary_key=True, index=True),
+        sa.Column('user_id', sa.Integer(), sa.ForeignKey('users.id', ondelete='CASCADE'), nullable=False),
+        sa.Column('amount', sa.Integer(), nullable=False),
+        sa.Column('type', sa.String(length=10), nullable=False),       # 'credit' или 'debit'
+        sa.Column('reason', sa.String(length=255), nullable=False),
+        sa.Column('timestamp', sa.DateTime(), server_default=sa.func.now(), nullable=False),
+    )
+
+
+def downgrade():
+    # 1) Удаляем таблицу transactions
+    op.drop_table('transactions')
+
+    # 2) Убираем FK и колонку category_id из products
+    op.drop_constraint('fk_products_category', 'products', type_='foreignkey')
+    op.drop_column('products', 'category_id')
+
+    # 3) Удаляем таблицу categories
+    op.drop_table('categories')

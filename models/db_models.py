@@ -36,6 +36,8 @@ class User(Base):
     # Связь: у пользователя может быть много ответов
     answers = relationship("Answer", back_populates="user", cascade="all, delete-orphan")
     Userprogress = relationship("UserProgress", back_populates="user", cascade="all, delete-orphan")
+    wallet = relationship("Wallet", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    transactions = relationship("Transaction", back_populates="user", cascade="all, delete-orphan")
 
 # Модель теста
 class Test(Base):
@@ -47,6 +49,7 @@ class Test(Base):
 
     # Связь: у теста может быть много вопросов
     questions = relationship("Question", back_populates="test", cascade="all, delete-orphan")
+
 
 # Модель вопроса
 class Question(Base):
@@ -63,6 +66,13 @@ class Question(Base):
 
     test = relationship("Test", back_populates="questions")
     answers = relationship("Answer", back_populates="question", cascade="all, delete-orphan")
+    images = relationship("QuestionImage", backref="question", cascade="all, delete-orphan")
+
+class QuestionImage(Base):
+    __tablename__ = 'question_images'
+    id = Column(Integer, primary_key=True, index=True)
+    question_id = Column(Integer, ForeignKey('questions.id'), nullable=False)
+    image = Column(String(1024), nullable=False)
 
 # Модель ответа
 class Answer(Base):
@@ -98,6 +108,51 @@ class Materials(Base):
     description = Column(Text)
     file = Column(String(1024), nullable=False)
     is_active = Column(Boolean, default=True)
+
+class Exam(Base):
+    __tablename__ = 'exams'
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False)
+    file = Column(String(1024), nullable=False)
+    is_active = Column(Boolean, default=True)
+    
+class Wallet(Base):
+    __tablename__ = 'wallets'
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey('users.id'), unique=True, nullable=False)
+    balance = Column(Integer, default=0)
+
+    user = relationship("User", back_populates="wallet", uselist=False)
+
+class Product(Base):
+    __tablename__ = 'products'
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False)
+    description = Column(Text)
+    price = Column(Integer, nullable=False)
+    image_url = Column(String(1024))
+    is_active = Column(Boolean, default=True)
+    category_id = Column(Integer, ForeignKey('categories.id'))
+    
+    category = relationship("Category", back_populates="products")
+
+class Transaction(Base):
+    __tablename__ = 'transactions'
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    amount = Column(Integer, nullable=False)           # + для начисления, – для списания
+    type = Column(String(10), nullable=False)          # 'credit' или 'debit'
+    reason = Column(String(255), nullable=False)       # обязательное текстовое поле
+    timestamp = Column(DateTime, default=datetime.utcnow)
+    
+    user = relationship("User", back_populates="transactions")
+
+class Category(Base):
+    __tablename__ = 'categories'
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), unique=True, nullable=False)
+    products = relationship("Product", back_populates="category")
+
 
 # Инициализация базы данных
 async def init_db():

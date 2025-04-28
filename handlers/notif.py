@@ -4,7 +4,7 @@ from aiogram import Bot
 from sqlalchemy.ext.asyncio import AsyncSession
 from models.db_models import User, SessionLocal
 import logging
-from config import API_TOKEN
+from config import API_TOKEN, ADMIN_ID
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from sqlalchemy.future import select
@@ -62,3 +62,7 @@ async def send_notification_with_delay(telegram_id: int, message: str):
         
     except Exception as e:
         logger.error(f"Не удалось отправить сообщение пользователю {telegram_id}: {e}")
+async def send_admin_notification(message: str):
+    # Отправка уведомлений всем администраторам
+    for admin_id in ADMIN_ID:
+        await send_notification(admin_id, message)

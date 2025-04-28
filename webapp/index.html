@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <title>Магазин El Gusto</title>
+  <style>
+    /* Палитра: теплый минимализм */
+    :root {
+      --bg:         #EAE7DC;
+      --card-bg:    #FFFFFF;
+      --primary:    #E98074;
+      --secondary:  #E85A4F;
+      --text:       #8E8D8A;
+      --subtext:    #8E8D8A;
+      --shadow:     rgba(0, 0, 0, 0.08);
+      --header-h:   70px;
+      --footer-h:   60px;
+      --gap:        16px;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg:       #2C2A29;
+        --card-bg:  #3A3837;
+        --text:     #EAE7DC;
+        --subtext:  #BBBBBB;
+        --shadow:   rgba(0, 0, 0, 0.5);
+      }
+    }
+    *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+    html, body { width:100%; height:100%; background:var(--bg); color:var(--text); font-family:'Inter',sans-serif; overscroll-behavior:none; }
+    body { overflow:hidden; }
+
+    /* Шапка */
+    header {
+      position:fixed;
+      top:0; left:0; right:0;
+      height:var(--header-h);
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      background:var(--card-bg);
+      box-shadow:0 2px 6px var(--shadow);
+      padding:0 var(--gap);
+      z-index:100;
+    }
+    .logo { height:72px; } /* 48px * 1.5 */
+    .header-profile {
+      display:flex;
+      align-items:center;
+      cursor:pointer;
+    }
+    .header-profile img {
+      width:40px;
+      height:40px;
+      border-radius:50%;
+      margin-right:8px;
+    }
+    .header-profile .header-name {
+      font-size:1rem;
+      font-weight:600;
+      color:var(--text);
+    }
+
+    /* Нижняя корзина */
+    .bottom-bar {
+      position:fixed;
+      bottom:0; left:0; right:0;
+      height:var(--footer-h);
+      background:var(--card-bg);
+      box-shadow:0 -2px 6px var(--shadow);
+      display:flex;
+      justify-content:flex-end;
+      align-items:center;
+      padding:0 var(--gap);
+      z-index:100;
+    }
+    #open-cart-bottom {
+      position:relative;
+      background:none;
+      border:none;
+      cursor:pointer;
+      font-size:32px;
+      color:var(--primary);
+    }
+    #bottom-cart-count {
+      position:absolute; top:-6px; right:-6px;
+      background:var(--secondary);
+      color:#fff;
+      border-radius:50%;
+      padding:2px 6px;
+      font-size:.75rem;
+      font-weight:600;
+    }
+
+    /* Основной контент */
+    #content, #profile-page {
+      position:absolute;
+      left:0; right:0;
+      top:var(--header-h);
+      bottom:var(--footer-h);
+      overflow-y:auto;
+      overscroll-behavior:contain;
+    }
+
+    /* Категории */
+    #categories {
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      padding:0 var(--gap) var(--gap);
+    }
+    #categories button {
+      padding:8px 14px;
+      background:var(--card-bg);
+      border:1px solid var(--primary);
+      border-radius:8px;
+      color:var(--primary);
+      font-weight:500;
+      cursor:pointer;
+      transition:background .2s,color .2s;
+    }
+    #categories button.active, #categories button:hover {
+      background:var(--primary);
+      color:#fff;
+    }
+
+    /* Карточки товаров */
+    #products {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: var(--gap);
+      padding: 0 var(--gap);
+      align-items: stretch;
+    }
+    .card {
+      flex:1 1 160px;
+      max-width:220px;
+      display:flex;
+      flex-direction:column;
+      background:var(--card-bg);
+      border-radius:12px;
+      overflow:hidden;
+      box-shadow:0 1px 4px var(--shadow);
+      transition:transform .2s;
+    }
+    .card:hover { transform:translateY(-4px); }
+    .card img { width:100%; height:120px; object-fit:cover; }
+    .card-content {
+      flex:1;
+      display:flex;
+      flex-direction:column;
+      justify-content:space-between;
+      padding:12px;
+    }
+    .card-content h3 { font-size:1rem; margin-bottom:6px; }
+    .card-content .desc { font-size:.85rem; color:var(--subtext); margin-bottom:8px; }
+    .card-content .price { font-size:1rem; font-weight:600; color:var(--primary); margin-bottom:8px; }
+    .card-content button {
+      align-self:flex-start;
+      padding:6px 12px;
+      background:var(--secondary);
+      color:#fff;
+      border:none;
+      border-radius:8px;
+      cursor:pointer;
+      transition:background .2s;
+    }
+    .card-content button:hover { background:var(--primary); }
+
+    /* Модалка корзины */
+    .cart-modal {
+      position:fixed;
+      inset:0;
+      display:none;
+      background:rgba(0,0,0,0.6);
+      align-items:center;
+      justify-content:center;
+      z-index:200;
+    }
+    .cart-modal.show { display:flex; }
+    .cart-content {
+      width:90%;
+      max-width:400px;
+      background:var(--card-bg);
+      border-radius:12px;
+      padding:20px;
+      box-shadow:0 2px 8px var(--shadow);
+    }
+    .cart-content h2 { text-align:center; margin-bottom:16px; color:var(--primary); font-size:1.2rem; }
+    #cart-items li { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; font-size:.9rem; }
+    #cart-items .remove-btn { background:none; border:none; font-size:18px; color:var(--subtext); cursor:pointer; margin-left:8px; transition:color .2s; }
+    #cart-items .remove-btn:hover { color:var(--secondary); }
+    #cart-total { text-align:right; font-weight:600; margin:12px 0; color:var(--primary); }
+
+    /* Страница профиля */
+    #profile-page { display:none; padding:var(--gap); }
+    .back-btn {
+      background:none;
+      border:none;
+      font-size:16px;
+      color:var(--primary);
+      cursor:pointer;
+      margin-bottom:var(--gap);
+    }
+    .profile-header {
+      display:flex; align-items:center;
+      background:var(--card-bg);
+      padding:var(--gap);
+      border-radius:12px;
+      box-shadow:0 1px 4px var(--shadow);
+      margin-bottom:var(--gap);
+    }
+    .profile-header img { width:56px; height:56px; border-radius:50%; margin-right:12px; }
+    .profile-header .info { display:flex; flex-direction:column; }
+    .profile-header .name { font-size:1.2rem; font-weight:600; }
+    .profile-header .balance { font-size:1rem; color:var(--subtext); }
+    .profile-actions { display:grid; grid-template-columns:1fr; gap:var(--gap); margin-bottom:var(--gap); }
+    .action-card {
+      display:flex; align-items:center;
+      background:var(--card-bg);
+      padding:var(--gap);
+      border-radius:12px;
+      box-shadow:0 1px 4px var(--shadow);
+      cursor:pointer;
+      transition:box-shadow .2s;
+    }
+    .action-card:hover { box-shadow:0 2px 6px var(--shadow); }
+    .action-card .icon { font-size:24px; color:var(--primary); margin-right:12px; }
+    .action-card .label { font-weight:500; }
+    .transactions-list { display:none; }
+    .transactions-list ul { list-style:none; }
+    .transactions-list li { margin-bottom:8px; font-size:.9rem; }
+
+    @media (min-width:768px) {
+      .card { flex:1 1 220px; }
+      .card img { height:150px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <img src="/static/logo.png" alt="El Gusto" class="logo">
+    <div class="header-profile" id="open-profile-header">
+      <img src="" alt="Avatar" id="header-avatar">
+      <div class="header-name" id="header-name"></div>
+    </div>
+  </header>
+
+  <div id="content">
+    <div id="categories"></div>
+    <div id="products"></div>
+  </div>
+
+  <div id="profile-page">
+    <button class="back-btn" id="back-to-main">‹ Назад</button>
+    <div class="profile-header">
+      <img src="" alt="Avatar" id="page-avatar">
+      <div class="info">
+        <div class="name" id="page-name"></div>
+        <div class="balance" id="page-balance"></div>
+      </div>
+    </div>
+    <div class="profile-actions">
+      <div class="action-card" id="history-card">
+        <div class="icon">📋</div><div class="label">История транзакций</div>
+      </div>
+    </div>
+    <div class="transactions-list" id="transactions-list">
+      <ul id="profile-transactions"></ul>
+    </div>
+  </div>
+
+  <div class="bottom-bar">
+    <button id="open-cart-bottom">🛒<span id="bottom-cart-count">0</span></button>
+  </div>
+
+  <div class="cart-modal" id="cart-modal">
+    <div class="cart-content">
+      <h2>Ваша корзина</h2>
+      <ul id="cart-items"></ul>
+      <div id="cart-total">Итого: 0 баллов</div>
+      <button id="checkout" class="btn">Оформить</button>
+      <button id="close-cart" class="btn">Закрыть</button>
+    </div>
+  </div>
+
+  <script>
+    const tg = window.Telegram.WebApp; tg.expand();
+    document.getElementById('content').addEventListener('touchmove', e => e.stopPropagation(), { passive: false });
+    let balance = 0, products = [], filteredCat = null, cart = {}, currentUserId;
+
+    async function loadUser() {
+      const user = tg.initDataUnsafe.user;
+      currentUserId = user.id;
+      const profile = await fetchJSON(`/webapp/user/${user.id}`);
+      const fullName = `${profile.first_name}${profile.last_name ? ' ' + profile.last_name : ''}`;
+      balance = profile.balance;
+      document.getElementById('header-avatar').src = profile.photo_url || '';
+      document.getElementById('header-name').textContent = fullName;
+      document.getElementById('page-avatar').src = profile.photo_url || '';
+      document.getElementById('page-name').textContent = fullName;
+      document.getElementById('page-balance').textContent = `Баланс: ${balance} баллов`;
+    }
+
+    async function loadProducts() {
+      products = await fetchJSON('/webapp/products');
+      renderCategories();
+      renderProducts();
+    }
+
+    function renderCategories() {
+      const ctr = document.getElementById('categories');
+      ctr.innerHTML = '';
+      const cats = Array.from(new Set(products.map(p => p.category || 'Без категории')));
+      ['Все', ...cats].forEach(cat => {
+        const btn = document.createElement('button');
+        btn.textContent = cat;
+        if ((filteredCat === null && cat === 'Все') || cat === filteredCat) btn.classList.add('active');
+        btn.onclick = () => { filteredCat = cat === 'Все' ? null : cat; renderProducts(); updateCats(btn); };
+        ctr.appendChild(btn);
+      });
+    }
+
+    function updateCats(activeBtn) {
+      document.querySelectorAll('#categories button').forEach(b => b.classList.remove('active'));
+      activeBtn.classList.add('active');
+    }
+
+    function renderProducts() {
+      const cont = document.getElementById('products');
+      cont.innerHTML = '';
+      const list = filteredCat ? products.filter(p => (p.category || 'Без категории') === filteredCat) : products;
+      list.forEach(p => {
+        const card = document.createElement('div'); card.className = 'card';
+        card.innerHTML = `
+          <img src="${p.img}" alt="${p.name}">
+          <div class="card-content">
+            <h3>${p.name}</h3>
+            <div class="desc">${p.desc||''}</div>
+            <div class="price">${p.price} баллов</div>
+            <button class="btn">Добавить</button>
+          </div>`;
+        card.querySelector('button').onclick = () => addToCart(p);
+        cont.appendChild(card);
+      });
+    }
+
+    function addToCart(prod) {
+      cart[prod.id] = cart[prod.id] || { product: prod, qty: 0 };
+      cart[prod.id].qty++;
+      updateCartBtn();
+    }
+
+    function removeFromCart(id) {
+      if (!cart[id]) return;
+      cart[id].qty--;
+      if (cart[id].qty <= 0) delete cart[id];
+      renderCart(); updateCartBtn();
+    }
+
+    function updateCartBtn() {
+      const cnt = Object.values(cart).reduce((s, i) => s + i.qty, 0);
+      document.getElementById('bottom-cart-count').textContent = cnt;
+    }
+
+    function renderCart() {
+      const ul = document.getElementById('cart-items'); ul.innerHTML = '';
+      let tot = 0;
+      Object.values(cart).forEach(({ product, qty }) => {
+        const li = document.createElement('li'); li.textContent = `${product.name} x${qty}`;
+        const btn = document.createElement('button'); btn.className = 'remove-btn'; btn.textContent = '×'; btn.onclick = () => removeFromCart(product.id);
+        const span = document.createElement('span'); span.textContent = product.price * qty;
+        li.appendChild(btn); li.appendChild(span); ul.appendChild(li);
+        tot += product.price * qty;
+      });
+      document.getElementById('cart-total').textContent = `Итого: ${tot} баллов`;
+      document.getElementById('checkout').disabled = tot > balance || tot === 0;
+    }
+
+    document.getElementById('open-cart-bottom').onclick = () => { renderCart(); document.getElementById('cart-modal').classList.add('show'); };
+    document.getElementById('close-cart').onclick = () => document.getElementById('cart-modal').classList.remove('show');
+    document.getElementById('checkout').onclick = async () => {
+      const items = Object.values(cart).map(o => ({ product_id: o.product.id, quantity: o.qty }));
+      const tot = items.reduce((s, i) => s + products.find(p => p.id === i.product_id).price * i.quantity, 0);
+      const ok = await new Promise(res => tg.showConfirm(
+        `Купить ${items.map(i => products.find(p => p.id === i.product_id).name + ' x' + i.quantity).join(', ')}?\nИтого ${tot} баллов`, res
+      ));
+      if (!ok) return;
+      try {
+        const api = await fetchJSON('/webapp/purchase_cart', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ telegram_id: currentUserId, items }) });
+        if (api.success) { balance = api.new_balance; document.getElementById('page-balance').textContent = `Баланс: ${balance} баллов`; cart = {}; renderProducts(); document.getElementById('cart-modal').classList.remove('show'); tg.showAlert('Покупка оформлена!'); }
+        else tg.showAlert(api.error || 'Ошибка');
+      } catch (e) { tg.showAlert('Ошибка сети: ' + e.message); }
+    };
+
+    document.getElementById('open-profile-header').onclick = () => { document.getElementById('content').style.display = 'none'; document.getElementById('profile-page').style.display = 'block'; };
+    document.getElementById('back-to-main').onclick = () => { document.getElementById('profile-page').style.display = 'none'; document.getElementById('content').style.display = 'block'; };
+    document.getElementById('history-card').onclick = () => { const list = document.getElementById('transactions-list'); if (list.style.display === 'block') list.style.display = 'none'; else { loadTransactions(); list.style.display = 'block'; } };
+
+    async function loadTransactions() {
+      const txs = await fetchJSON(`/webapp/transactions/${currentUserId}`);
+      const ul = document.getElementById('profile-transactions'); ul.innerHTML = '';
+      if (!txs.length) ul.innerHTML = '<li>Нет транзакций</li>';
+      else txs.forEach(t => { const li = document.createElement('li'); li.textContent = `${new Date(t.when).toLocaleString()}: ${t.amount > 0 ? '+' : ''}${t.amount} (${t.reason})`; ul.appendChild(li); });
+    }
+
+    async function fetchJSON(path, opts) { const r = await fetch(path, opts); if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); }
+
+    document.addEventListener('DOMContentLoaded', async () => { await loadUser(); await loadProducts(); });
+  </script>
+</body>
+</html>

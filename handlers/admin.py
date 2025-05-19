@@ -4,7 +4,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, File
 from config import ADMIN_ID, API_TOKEN, STATIC_ROOT, STATIC_URL
 from states.forms import AddQuestionForm, EditQuestionForm, TestCreationForm, DeleteQuestionForm, AddMaterialsForm, AddExamForm, QuestionStreamForm, BulkAddQuestionsForm
-from models.db_models import SessionLocal, Question, Test, UserProgress, Materials, Exam, QuestionImage, Category, Transaction
+from models.db_models import SessionLocal, Question, Test, UserProgress, Materials, Exam, QuestionImage, Category, Transaction, Answer
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.future import select
 from sqlalchemy.orm import joinedload
@@ -16,6 +16,7 @@ from sqlalchemy import delete
 from handlers.utils import admin_only
 from states.forms import AddProductForm, AddBalanceForm
 from models.db_models import Product, Wallet, User
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 admin_ids = os.getenv('ADMIN_ID')
 
@@ -32,7 +33,7 @@ def get_admin_panel_keyboard() -> ReplyKeyboardMarkup:
     keyboard = [
         [KeyboardButton(text="Добавить материалы"), KeyboardButton(text="Удалить материалы")],
         [KeyboardButton(text="Создать тест"), KeyboardButton(text="Добавить вопрос")],
-        [KeyboardButton(text="Редактировать вопрос"), KeyboardButton(text="Отслеживание прогресса")],
+        [KeyboardButton(text="Редактировать вопрос"), KeyboardButton(text="Отслеживание прогресса"), KeyboardButton(text="Просмотр ошибок")],
         [KeyboardButton(text="Удалить тест"), KeyboardButton(text="Удалить вопрос"), KeyboardButton(text="Сброс прогресса")],
         [KeyboardButton(text="Добавить товар"), KeyboardButton(text="Начислить баллы")],
         [KeyboardButton(text="Назад"), KeyboardButton(text="Отмена")]
@@ -276,7 +277,102 @@ async def cancel_reset_all(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.edit_text("Сброс прогресса отменён.")
     await callback.answer()
 
+@router.message(lambda msg: msg.text == "Просмотр ошибок")
+@admin_only
+async def show_tests_for_errors(message: types.Message):
+    async with SessionLocal() as session:
+        result = await session.execute(
+            select(Test).filter(Test.is_active == True).order_by(Test.name)
+        )
+        tests = result.scalars().all()
 
+    if not tests:
+        return await message.answer("❕ Нет доступных тестов.")
+
+    builder = InlineKeyboardBuilder()
+    for t in tests:
+        builder.button(text=t.name, callback_data=f"view_errors_{t.id}")
+    # расположим по одной кнопке в ряд
+    builder.adjust(1)
+
+    await message.answer(
+        "Выберите тест для просмотра ошибок:",
+        reply_markup=builder.as_markup()
+    )
+
+# 2) Callback-хендлер — собираем ошибки только по выбранному тесту
+MAX_MESSAGE_LENGTH = 4000
+
+@router.callback_query(lambda c: c.data and c.data.startswith("view_errors_"))
+@admin_only
+async def display_errors_for_test(callback: types.CallbackQuery):
+    # выдергиваем ID теста из callback_data
+    test_id = int(callback.data.split("_")[-1])
+
+    # достаем все неверные ответы по этому тесту
+    async with SessionLocal() as session:
+        result = await session.execute(
+            select(Answer)
+            .join(Question, Answer.question_id == Question.id)
+            .options(
+                joinedload(Answer.user),
+                joinedload(Answer.question).joinedload(Question.test)
+            )
+            .filter(
+                Answer.is_correct == False,
+                Question.test_id == test_id
+            )
+        )
+        bad_answers = result.scalars().all()
+
+    if not bad_answers:
+        await callback.message.edit_text("✅ По этому тесту неверных ответов нет.")
+        return
+
+    # группируем по пользователям
+    errors_by_user = defaultdict(list)
+    for ans in bad_answers:
+        errors_by_user[ans.user].append(ans)
+
+    # готовим и шлем текст, разбивая на чанки
+    header = f"<b>Ошибки в тесте «{bad_answers[0].question.test.name}»:</b>\n\n"
+    buffer = header
+
+    async def flush():
+        nonlocal buffer
+        await callback.message.answer(buffer, parse_mode="HTML")
+        buffer = ""
+
+    for user, answers in errors_by_user.items():
+        # шапка по пользователю
+        user_line = (
+    f"🔹 👤 <b><u>{user.first_name}</u></b> "
+    f"(ID: <code>{user.telegram_id}</code>)\n"
+)
+        if len(buffer) + len(user_line) > MAX_MESSAGE_LENGTH:
+            await flush()
+        buffer += user_line
+
+        for ans in answers:
+            q = ans.question
+            opts = {'A': q.option_a, 'B': q.option_b, 'C': q.option_c, 'D': q.option_d}
+            sel, corr = ans.selected_answer, q.correct_answer
+
+            q_block = (
+                f"❓ {q.question_text}\n"
+                f"↪️ Выбран: <b>{sel}</b> — {opts[sel]}\n"
+                f"✔️ Правильный: <b>{corr}</b> — {opts[corr]}\n\n"
+            )
+
+            if len(buffer) + len(q_block) > MAX_MESSAGE_LENGTH:
+                await flush()
+            buffer += q_block
+
+    if buffer:
+        await flush()
+
+    # опционально: удаляем клавиатуру под исходным сообщением
+    await callback.message.delete_reply_markup()
 #добавление материалов
 @router.message (Command("add_materials"))
 @admin_only

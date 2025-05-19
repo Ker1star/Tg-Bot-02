@@ -1,6 +1,6 @@
 from aiogram import Router, types, F
 from aiogram.filters import Command
-from models.db_models import SessionLocal, User, Question, Test, UserProgress, Materials
+from models.db_models import SessionLocal, User, Question, Test, UserProgress, Materials, Answer
 from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 from sqlalchemy.exc import SQLAlchemyError
@@ -8,7 +8,7 @@ from sqlalchemy.future import select
 import datetime, os, random, asyncio, time
 import html, logging
 from sqlalchemy.ext.asyncio import AsyncSession
-from config import ADMIN_ID
+from config import ADMIN_ID, WEBHOOK_HOST
 from handlers.admin import admin_panel_handler
 from handlers.notif import send_admin_notification, send_notification
 from collections import defaultdict
@@ -39,7 +39,7 @@ async def show_store_button(message: types.Message):
         inline_keyboard=[[
             InlineKeyboardButton(
                 text="Открыть магазин",
-                web_app=WebAppInfo(url="https://e3a4-151-236-4-174.ngrok-free.app")
+                web_app=WebAppInfo(url=WEBHOOK_HOST) 
             )
         ]]
     )
@@ -357,14 +357,29 @@ async def answer_question_callback(callback: types.CallbackQuery, state: FSMCont
 
     data = await state.get_data()
     question = data["questions"][index]
+    question_data = data["questions"][index]
     correct = question["correct"]
+    is_correct = (selected_letter == correct)
     score = data["score"]
 
     # Обновляем счёт, если нужно
     if selected_letter == correct:
         score += 1
     await state.update_data(score=score)
-
+    # Сохраняем в БД факт ответа
+    async with SessionLocal() as session:
+        # 1) найдем пользователя в БД
+        result = await session.execute(select(User).filter(User.telegram_id == callback.from_user.id))
+        user = result.scalar_one_or_none()
+        # 2) создадим Answer
+        answer = Answer(
+            user_id=user.id,
+            question_id=question_data["id"],      # передавали ли вы id в вопросах?
+            selected_answer=selected_letter,
+            is_correct=is_correct
+        )
+        session.add(answer)
+        await session.commit()
     # Удаляем старые сообщения с вопросом и вариантами
     chat_id = callback.message.chat.id
     for key in ("question_msg_id", "options_msg_id"):

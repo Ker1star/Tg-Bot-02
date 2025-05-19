@@ -1,4 +1,3 @@
-# states/forms.py
 from aiogram.fsm.state import StatesGroup, State
 
 class TestCreationForm(StatesGroup):

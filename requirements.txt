@@ -1,11 +1,8 @@
-fastapi
-uvicorn
 aiogram
 python-dotenv
 sqlalchemy
 aiohttp
 alembic
-pydantic
 psycopg2-binary
 asyncpg
 tzdata

@@ -9,4 +9,5 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 WEBHOOK_HOST = os.getenv("WEBHOOK_HOST")
 WEBHOOK_PATH = "/webhook/{token}"
 WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
+PROXY_URL = os.getenv("PROXY_URL")  # пример: http://user:pass@host:port
 WAITER_CHAT_ID = -1002246175197

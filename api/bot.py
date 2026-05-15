@@ -6,10 +6,11 @@ from fastapi import FastAPI, Request
 from aiogram import Bot, Dispatcher
 from aiogram.types import Update
 from aiogram.client.default import DefaultBotProperties
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 
-from config import API_TOKEN, WEBHOOK_URL, WEBHOOK_HOST
+from config import API_TOKEN, WEBHOOK_URL, WEBHOOK_HOST, PROXY_URL
 from handlers.admin import router as admin_router
 from handlers.client import router as client_router
 from handlers.shift import router as shift_router
@@ -17,7 +18,10 @@ from utils.database import init_db
 
 logging.basicConfig(level=logging.INFO)
 
-bot = Bot(token=API_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+session = AiohttpSession(proxy=PROXY_URL) if PROXY_URL else None
+bot = Bot(token=API_TOKEN, session=session, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+if PROXY_URL:
+    logging.info("Telegram API requests routed through proxy")
 dp = Dispatcher(storage=MemoryStorage())
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler

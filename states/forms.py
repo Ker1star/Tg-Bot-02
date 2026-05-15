@@ -1,5 +1,15 @@
 from aiogram.fsm.state import StatesGroup, State
 
+class AddShiftTaskForm(StatesGroup):
+    title = State()
+    description = State()
+    weekday = State()
+
+class EditShiftTaskForm(StatesGroup):
+    title = State()
+    description = State()
+    weekday = State()
+    
 class TestCreationForm(StatesGroup):
     name = State()
     description = State()
@@ -49,14 +59,3 @@ class AddExamForm(StatesGroup):
 class BulkAddQuestionsForm(StatesGroup):
     text = State()
 
-class AddProductForm(StatesGroup):
-    name = State()
-    desc = State()
-    price = State()
-    category = State()
-    image_url = State()
-
-class AddBalanceForm(StatesGroup):
-    telegram_id = State()
-    amount = State()
-    reason = State()

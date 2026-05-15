@@ -2,18 +2,19 @@ from aiogram import Router, types, F
 from aiogram.filters import Command
 from models.db_models import SessionLocal, User, Question, Test, UserProgress, Materials, Answer
 from aiogram.fsm.context import FSMContext
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, CallbackQuery
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.future import select
 import datetime, os, random, asyncio, time
 import html, logging
 from sqlalchemy.ext.asyncio import AsyncSession
-from config import ADMIN_ID, WEBHOOK_HOST
+from config import ADMIN_ID
 from handlers.admin import admin_panel_handler
 from handlers.notif import send_admin_notification, send_notification
 from collections import defaultdict
 from sqlalchemy.orm import joinedload
 from zoneinfo import ZoneInfo
+from aiogram.exceptions import TelegramBadRequest
 router = Router()
 logger = logging.getLogger(__name__)
 
@@ -21,29 +22,12 @@ admin_ids = os.getenv('ADMIN_ID')
 admin_ids_list = [int(admin_id.strip()) for admin_id in admin_ids.split(',')]
 
 def get_main_menu_keyboard() -> ReplyKeyboardMarkup:
-    """
-    Формирует клавиатуру с описательными кнопками.
-    """
     keyboard = [
         [KeyboardButton(text="📚 Учебные материалы")],
         [KeyboardButton(text="📝 Пройти тест"), KeyboardButton(text="❓ Помощь")],
-        [KeyboardButton(text="❌ Отмена"), KeyboardButton(text="🛒 Магазин")]
+        [KeyboardButton(text="❌ Отмена")]
     ]
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
-
-from aiogram.types import WebAppInfo
-
-@router.message(lambda msg: msg.text == "🛒 Магазин")
-async def show_store_button(message: types.Message):
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[[
-            InlineKeyboardButton(
-                text="Открыть магазин",
-                web_app=WebAppInfo(url=WEBHOOK_HOST) 
-            )
-        ]]
-    )
-    await message.answer("Добро пожаловать в магазин!", reply_markup=keyboard)
 
 
 @router.message(lambda message: message.text == "📚 Учебные материалы")
@@ -89,7 +73,7 @@ async def start_handler(message: types.Message, state: FSMContext):
     logging.info(f"Команда /start от {message.from_user.username}")
 
     keyboard = [
-        [KeyboardButton(text="📚 Учебные материалы")], [KeyboardButton(text="📊 Мой прогресс"), KeyboardButton(text="🛒 Магазин")],
+        [KeyboardButton(text="📚 Учебные материалы"), KeyboardButton(text="📊 Мой прогресс")],
         [KeyboardButton(text="📝 Пройти тест"), KeyboardButton(text="❓ Помощь")],
         [KeyboardButton(text="❌ Отмена")],
     ]
@@ -349,114 +333,152 @@ async def send_current_question(message: types.Message, state: FSMContext):
         keyboard_msg_id=keyboard_msg.message_id
         )
 
-@router.callback_query(lambda c: c.data and c.data.startswith("answer_"))
-async def answer_question_callback(callback: types.CallbackQuery, state: FSMContext):
-    data_parts = callback.data.split("_")
-    index = int(data_parts[1])
-    selected_letter = data_parts[2]
-
-    data = await state.get_data()
-    question = data["questions"][index]
-    question_data = data["questions"][index]
-    correct = question["correct"]
-    is_correct = (selected_letter == correct)
-    score = data["score"]
-
-    # Обновляем счёт, если нужно
-    if selected_letter == correct:
-        score += 1
-    await state.update_data(score=score)
-    # Сохраняем в БД факт ответа
-    async with SessionLocal() as session:
-        # 1) найдем пользователя в БД
-        result = await session.execute(select(User).filter(User.telegram_id == callback.from_user.id))
-        user = result.scalar_one_or_none()
-        # 2) создадим Answer
-        answer = Answer(
-            user_id=user.id,
-            question_id=question_data["id"],      # передавали ли вы id в вопросах?
-            selected_answer=selected_letter,
-            is_correct=is_correct
-        )
-        session.add(answer)
-        await session.commit()
-    # Удаляем старые сообщения с вопросом и вариантами
-    chat_id = callback.message.chat.id
-    for key in ("question_msg_id", "options_msg_id"):
-        msg_id = data.get(key)
-        if msg_id:
-            try:
-                await callback.message.bot.delete_message(chat_id, msg_id)
-            except Exception as e:
-                logger.error(f"Ошибка удаления сообщения {msg_id}: {e}")
-
-    # Строим новый «красивый» текст
-    letters = ['A', 'B', 'C', 'D']
-    lines = []
-    for letter, opt in zip(letters, question["options"]):
-        if letter == correct:
-            mark = "✅"              # правильный вариант
-        elif letter == selected_letter:
-            mark = "❌"              # куда нажал пользователь
-        else:
-            mark = "▫️"              # остальные
-        lines.append(f"{mark} <b>{letter}:</b> {html.escape(opt)}")
-
-    ui_text = (
-        f"<b>Вопрос {index+1}:</b> {html.escape(question['text'])}\n\n"
-        + "\n".join(lines)
-    )
-
-    # Кнопка «Далее»
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="➡️ Далее", callback_data="next_question")]
-        ]
-    )
-
-    # Редактируем исходное сообщение кнопки, вставляя наш UI
-    await callback.message.edit_text(ui_text, parse_mode="HTML", reply_markup=keyboard)
-
-# Глобальный словарь блокировок для каждого пользователя
-user_locks = {}
-
-# Глобальный словарь для хранения времени последнего нажатия "Далее" для каждого пользователя
+# Для throttle на “Далее”
 user_next_question_time = defaultdict(lambda: 0)
-THROTTLE_PERIOD = 2.0  # время в секундах, в течение которого повторный tap будет игнорироваться
+THROTTLE_PERIOD = 2.0  # сек
 
+# -----------------------------------------------------------------------------
+# Обработчик выбора ответа
+# -----------------------------------------------------------------------------
+@router.callback_query(lambda c: c.data.startswith("answer_"))
+async def answer_question_callback(callback: CallbackQuery, state: FSMContext):
+    # 1) моментальный ack
+    try:
+        await callback.answer()
+    except TelegramBadRequest as e:
+        logger.warning(f"answer_question: callback.answer failed: {e}")
+
+    # 2) получаем текущее состояние
+    data = await state.get_data()
+    current_q_idx = int(callback.data.split("_")[1])
+    answered = set(data.get("answered_questions", []))
+
+    # 3) блокировка повторов
+    if data.get("processing_answer", False):
+        return
+    if current_q_idx in answered:
+        try:
+            await callback.answer("Вы уже ответили на этот вопрос.", show_alert=True)
+        except TelegramBadRequest:
+            pass
+        return
+
+    # 4) ставим флаг «в процессе» и отмечаем вопрос отвеченным
+    await state.update_data(processing_answer=True)
+    answered.add(current_q_idx)
+    await state.update_data(answered_questions=list(answered))
+
+    # 5) сохраняем локально текущий score
+    current_score = data.get("score", 0)
+
+    try:
+        # 6) снимаем клавиатуру
+        try:
+            await callback.message.edit_reply_markup(reply_markup=None)
+        except TelegramBadRequest as e:
+            logger.warning(f"answer_question: remove keyboard failed: {e}")
+
+        # 7) сохраняем ответ в БД
+        selected_letter = callback.data.split("_")[2]
+        question = data["questions"][current_q_idx]
+        is_correct = (selected_letter == question["correct"])
+        async with SessionLocal() as session:
+            user = (await session.execute(
+                select(User).filter(User.telegram_id == callback.from_user.id)
+            )).scalar_one()
+            answer = Answer(
+                user_id=user.id,
+                question_id=question["id"],
+                selected_answer=selected_letter,
+                is_correct=is_correct
+            )
+            session.add(answer)
+            await session.commit()
+
+        # 8) **инкрементируем score**
+        if is_correct:
+            current_score += 1
+            await state.update_data(score=current_score)
+
+        # 9) удаляем вопрос и варианты
+        chat_id = callback.message.chat.id
+        for key in ("question_msg_id", "options_msg_id"):
+            msg_id = data.get(key)
+            if msg_id:
+                try:
+                    await callback.message.bot.delete_message(chat_id, msg_id)
+                except Exception as e:
+                    logger.error(f"Ошибка удаления msg {msg_id}: {e}")
+
+        # 10) строим фидбек и кнопку «Далее»
+        letters = ['A','B','C','D']
+        lines = []
+        for letter, opt in zip(letters, question["options"]):
+            mark = "✅" if letter == question["correct"] else ("❌" if letter == selected_letter else "▫️")
+            lines.append(f"{mark} <b>{letter}:</b> {html.escape(opt)}")
+        ui_text = (
+            f"<b>Вопрос {current_q_idx+1}:</b> {html.escape(question['text'])}\n\n"
+            + "\n".join(lines)
+        )
+        next_kb = InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="➡️ Далее", callback_data="next_question")]]
+        )
+        try:
+            await callback.message.edit_text(ui_text, parse_mode="HTML", reply_markup=next_kb)
+        except TelegramBadRequest as e:
+            if "not modified" not in str(e):
+                logger.error(f"answer_question: edit_text failed: {e}")
+
+    finally:
+        # 11) снимаем флаг блокировки
+        await state.update_data(processing_answer=False)
+# -----------------------------------------------------------------------------
+# Обработчик кнопки “Далее”
+# -----------------------------------------------------------------------------
 @router.callback_query(lambda c: c.data == "next_question")
-async def next_question_callback(callback: types.CallbackQuery, state: FSMContext):
+async def next_question_callback(callback: CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
     now = time.monotonic()
+
+    # Throttle
     if now - user_next_question_time[user_id] < THROTTLE_PERIOD:
-         # Если прошло недостаточно времени с предыдущего нажатия – уведомляем пользователя и не обрабатываем запрос
-         await callback.answer("Пожалуйста, подождите...", show_alert=True)
-         return
-    # Обновляем время последнего нажатия
+        try:
+            await callback.answer("Пожалуйста, подождите...", show_alert=True)
+        except TelegramBadRequest:
+            pass
+        return
     user_next_question_time[user_id] = now
 
-     # Удаляем предыдущий блок с обратной связью целиком
+    # ack сразу
+    try:
+        await callback.answer()
+    except TelegramBadRequest as e:
+        logger.warning(f"next_question: callback.answer failed: {e}")
+
+    # снимаем клавиатуру
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except TelegramBadRequest as e:
+        logger.warning(f"next_question: remove keyboard failed: {e}")
+
+    # защита от параллельного запуска
+    data = await state.get_data()
+    if data.get("processing_next"):
+        return
+    await state.update_data(processing_next=True)
+
+    # удаляем feedback-сообщение целиком
     try:
         await callback.message.delete()
-    except Exception as e:
-        logger.error(f"Не удалось удалить сообщение с обратной связью: {e}")
+    except TelegramBadRequest as e:
+        logger.warning(f"next_question: delete feedback failed: {e}")
 
-    data = await state.get_data()
-    if not data:
-         await callback.answer("Тест уже завершён!", show_alert=True)
-         return
-
-    # Можно дополнительно использовать флаг в состоянии (если требуется)
-    if data.get("processing_next", False):
-         await callback.answer("Пожалуйста, подождите...", show_alert=True)
-         return
-
-    await state.update_data(processing_next=True)
-    current_index = data.get("current_index", 0) + 1
-    await state.update_data(current_index=current_index)
+    # отправляем следующий вопрос
+    await state.update_data(current_index=data.get("current_index", 0) + 1)
     await send_current_question(callback.message, state)
-    await state.update_data(processing_next=False)
 
+    # сбрасываем флаг
+    await state.update_data(processing_next=False)
 async def handle_unexpected(message: types.Message):
     await message.answer("Неизвестная команда. Используйте кнопки меню.")
 

@@ -1,21 +1,21 @@
-from aiogram import Router, types, Bot
+from aiogram import Router, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, File
-from config import ADMIN_ID, API_TOKEN, STATIC_ROOT, STATIC_URL
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
+from config import ADMIN_ID
 from states.forms import AddQuestionForm, EditQuestionForm, TestCreationForm, DeleteQuestionForm, AddMaterialsForm, AddExamForm, QuestionStreamForm, BulkAddQuestionsForm
-from models.db_models import SessionLocal, Question, Test, UserProgress, Materials, Exam, QuestionImage, Category, Transaction, Answer
+from models.db_models import SessionLocal, Question, Test, UserProgress, Materials, Exam, QuestionImage, Answer
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.future import select
 from sqlalchemy.orm import joinedload
 from collections import defaultdict
 from handlers.notif import send_notifications_to_all_users
-import logging, os, datetime, uuid
+import logging, os, datetime
 from zoneinfo import ZoneInfo
 from sqlalchemy import delete
 from handlers.utils import admin_only
-from states.forms import AddProductForm, AddBalanceForm
-from models.db_models import Product, Wallet, User
+from states.forms import AddShiftTaskForm, EditShiftTaskForm
+from models.db_models import User, ShiftTaskTemplate, ShiftTaskInstance
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 admin_ids = os.getenv('ADMIN_ID')
@@ -26,6 +26,16 @@ logger = logging.getLogger(__name__)
 
 router = Router()
 
+WD_FULL = [
+    "Понедельник",
+    "Вторник",
+    "Среда",
+    "Четверг",
+    "Пятница",
+    "Суббота",
+    "Воскресенье",
+]
+
 def get_admin_panel_keyboard() -> ReplyKeyboardMarkup:
     """
     Формирует клавиатуру панели администратора.
@@ -35,182 +45,10 @@ def get_admin_panel_keyboard() -> ReplyKeyboardMarkup:
         [KeyboardButton(text="Создать тест"), KeyboardButton(text="Добавить вопрос")],
         [KeyboardButton(text="Редактировать вопрос"), KeyboardButton(text="Отслеживание прогресса"), KeyboardButton(text="Просмотр ошибок")],
         [KeyboardButton(text="Удалить тест"), KeyboardButton(text="Удалить вопрос"), KeyboardButton(text="Сброс прогресса")],
-        [KeyboardButton(text="Добавить товар"), KeyboardButton(text="Начислить баллы")],
+        [KeyboardButton(text="Задачи смены")],
         [KeyboardButton(text="Назад"), KeyboardButton(text="Отмена")]
     ]
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
-
-# — — Добавить товар — —
-@router.message(lambda msg: msg.text == "Добавить товар")
-@admin_only
-async def cmd_add_product(message: types.Message, state: FSMContext):
-    await state.clear()
-    await message.answer("🛒 Введите название товара:")
-    await state.set_state(AddProductForm.name)
-
-@router.message(AddProductForm.name)
-async def product_name(message: types.Message, state: FSMContext):
-    await state.update_data(name=message.text)
-    await message.answer("Введите описание товара:")
-    await state.set_state(AddProductForm.desc)
-
-@router.message(AddProductForm.desc)
-async def product_desc(message: types.Message, state: FSMContext):
-    await state.update_data(desc=message.text)
-    await message.answer("Введите цену товара (целое число в баллах):")
-    await state.set_state(AddProductForm.price)
-
-@router.message(AddProductForm.price)
-async def product_price(message: types.Message, state: FSMContext):
-    if not message.text.isdigit():
-        return await message.answer("Нужно число. Пожалуйста, введите цену цифрами:")
-    await state.update_data(price=int(message.text))
-
-    # Загружаем все активные категории из БД
-    async with SessionLocal() as session:
-        result = await session.execute(select(Category))
-        categories = result.scalars().all()
-
-    if not categories:
-        return await message.answer("❌ Нет ни одной категории. Сначала создайте категории в БД.")
-
-    # Формируем inline-клавиатуру с кнопками категорий
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text=cat.name, callback_data=f"choose_cat_{cat.id}")]
-            for cat in categories
-        ]
-    )
-    await message.answer("🗂 Выберите категорию:", reply_markup=keyboard)
-    await state.set_state(AddProductForm.category)
-
-
-@router.callback_query(lambda c: c.data and c.data.startswith("choose_cat_"))
-async def choose_category(callback: types.CallbackQuery, state: FSMContext):
-    # Получаем ID категории из callback_data
-    cat_id = int(callback.data.split("_")[-1])
-    # Опционально: достаем название, чтобы подтвердить выбор
-    async with SessionLocal() as session:
-        category = await session.get(Category, cat_id)
-
-    if not category:
-        await callback.answer("❌ Категория не найдена.", show_alert=True)
-        return
-
-    # Сохраняем выбор в state
-    await state.update_data(category_id=cat_id)
-    # Подтверждаем выбор и запрашиваем следующий шаг
-    await callback.message.edit_text(f"✅ Категория выбрана: «{category.name}»")
-    await callback.message.answer("📸 Прикрепите фотографию товара:")
-    await state.set_state(AddProductForm.image_url)
-    await callback.answer()
-
-@router.message(AddProductForm.image_url)
-async def product_image(message: types.Message, state: FSMContext):
-    if not message.photo:
-        return await message.answer("❗ Пожалуйста, отправьте фотографию товара.")
-    photo = message.photo[-1]
-    ext = ".jpg"
-    filename = f"{uuid.uuid4().hex}{ext}"
-    upload_dir = os.path.join(STATIC_ROOT, "uploads", "products")
-    os.makedirs(upload_dir, exist_ok=True)
-    file_path = os.path.join(upload_dir, filename)
-    tg_file = await message.bot.get_file(photo.file_id)
-
-    await message.bot.download_file(tg_file.file_path, destination=file_path)
-
-    public_url = f"{STATIC_URL}/uploads/products/{filename}"
-
-    # 5. Сохранить товар в БД
-    data = await state.get_data()
-    try:
-        async with SessionLocal() as session:
-            async with session.begin():
-                new = Product(
-                    name=data["name"],
-                    description=data["desc"],
-                    price=data["price"],
-                    image_url=public_url,
-                    category_id=data["category_id"]
-                )
-                session.add(new)
-
-        await message.answer(f"✅ Товар «{data['name']}» добавлен в магазин.")
-    except Exception as e:
-        logger.error(f"Ошибка при добавлении товара: {e}", exc_info=True)
-        await message.answer("❌ Ошибка при сохранении товара!")
-    finally:
-        await state.clear()
-
-from models.db_models import Wallet, Transaction, User
-from sqlalchemy.future import select
-
-# — — Начислить баллы — —
-@router.message(lambda msg: msg.text == "Начислить баллы")
-@admin_only
-async def cmd_add_balance(message: types.Message, state: FSMContext):
-    await state.clear()
-    await message.answer("💰 Введите Telegram ID пользователя:")
-    await state.set_state(AddBalanceForm.telegram_id)
-
-@router.message(AddBalanceForm.telegram_id)
-async def bal_user_id(message: types.Message, state: FSMContext):
-    if not message.text.isdigit():
-        return await message.answer("ID — число. Повторите ввод:")
-    await state.update_data(telegram_id=int(message.text))
-    await message.answer("Введите количество баллов для зачисления/списания (целое число, можно отрицательное):")
-    await state.set_state(AddBalanceForm.amount)
-
-@router.message(AddBalanceForm.amount)
-async def bal_amount(message: types.Message, state: FSMContext):
-    text = message.text.strip()
-    if not (text.lstrip('-').isdigit()):
-        return await message.answer("Нужно целое число (можно с минусом). Повторите ввод:")
-    amount = int(text)
-    await state.update_data(amount=amount)
-    await message.answer("Введите причину начисления/списания:")
-    await state.set_state(AddBalanceForm.reason)
-
-@router.message(AddBalanceForm.reason)
-async def bal_reason(message: types.Message, state: FSMContext):
-    data = await state.get_data()
-    reason = message.text.strip()
-    if not reason:
-        return await message.answer("Причина не может быть пустой. Повторите ввод:")
-    telegram_id = data['telegram_id']
-    amount = data['amount']
-
-    async with SessionLocal() as session:
-        # Находим или создаём пользователя
-        result = await session.execute(select(User).filter(User.telegram_id == telegram_id))
-        user = result.scalar_one_or_none()
-        if not user:
-            return await message.answer(f"❌ Пользователь с ID {telegram_id} не найден.")
-        # Находим или создаём кошелёк
-        wallet_res = await session.execute(select(Wallet).filter(Wallet.user_id == user.id))
-        wallet = wallet_res.scalar_one_or_none()
-        if not wallet:
-            wallet = Wallet(user_id=user.id, balance=0)
-            session.add(wallet)
-        # Изменяем баланс
-        wallet.balance += amount
-        # Сохраняем транзакцию
-        tx = Transaction(
-            user_id=user.id,
-            amount=amount,
-            type="credit" if amount > 0 else "debit",
-            reason=reason
-        )
-        session.add(tx)
-        await session.commit()
-
-    await message.answer(
-        f"✅ Пользователю {telegram_id} {'зачислено' if amount>0 else 'списано'} {abs(amount)} баллов.\n"
-        f"Причина: «{reason}».\n"
-        f"Новый баланс: {wallet.balance}"
-    )
-    await state.clear()
-
 
 # Команда для вывода панели администратора
 @router.message(Command("admin_panel"))
@@ -1170,3 +1008,231 @@ async def handle_admin_cancel(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer("Действие отменено.", reply_markup=get_admin_panel_keyboard())
 
+@router.message(lambda msg: msg.text == "Задачи смены")
+@admin_only
+async def shift_tasks_menu(message: types.Message, state: FSMContext):
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➕ Добавить задачу", callback_data="shift_add_task")],
+        [InlineKeyboardButton(text="📋 Список задач", callback_data="shift_list_tasks")],
+        [InlineKeyboardButton(text="📊 Статистика задач", callback_data="shift_tasks_stats")],
+    ])
+    await message.answer("Меню задач смены:", reply_markup=kb)
+
+@router.callback_query(lambda c: c.data == "shift_add_task")
+@admin_only
+async def shift_add_task_start(callback: types.CallbackQuery, state: FSMContext):
+    await state.set_state(AddShiftTaskForm.title)
+    await callback.message.answer("Введите короткий текст задачи (что нужно сделать):")
+    await callback.answer()
+
+
+@router.message(AddShiftTaskForm.title)
+@admin_only
+async def shift_task_title(message: types.Message, state: FSMContext):
+    await state.update_data(title=message.text.strip())
+    await message.answer("Введите описание (или - для пропуска):")
+    await state.set_state(AddShiftTaskForm.description)
+
+
+@router.message(AddShiftTaskForm.description)
+@admin_only
+async def shift_task_desc(message: types.Message, state: FSMContext):
+    desc = message.text.strip()
+    if desc == "-":
+        desc = ""
+    await state.update_data(description=desc)
+    await message.answer(
+        "Укажите день недели для задачи (1–7):\n"
+        "1 — Понедельник\n"
+        "2 — Вторник\n"
+        "3 — Среда\n"
+        "4 — Четверг\n"
+        "5 — Пятница\n"
+        "6 — Суббота\n"
+        "7 — Воскресенье"
+    )
+    await state.set_state(AddShiftTaskForm.weekday)
+
+
+@router.message(AddShiftTaskForm.weekday)
+@admin_only
+async def shift_task_weekday(message: types.Message, state: FSMContext):
+    text = message.text.strip()
+    if not text.isdigit():
+        await message.answer("Нужно число от 1 до 7. Попробуйте ещё раз.")
+        return
+
+    n = int(text)
+    if not (1 <= n <= 7):
+        await message.answer("Нужно число от 1 до 7. Попробуйте ещё раз.")
+        return
+
+    weekday_idx = n - 1  # 0=Пн ... 6=Вс — как в date.weekday()
+
+    data = await state.get_data()
+    async with SessionLocal() as session:
+        new_task = ShiftTaskTemplate(
+            title=data["title"],
+            description=data["description"],
+            weekday=weekday_idx,
+            is_active=True,
+        )
+        session.add(new_task)
+        await session.commit()
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➕ Добавить ещё задачу", callback_data="shift_add_task_again")],
+        [InlineKeyboardButton(text="⬅️ В меню задач", callback_data="shift_back_to_menu")],
+    ])
+
+    await message.answer(
+        f"✅ Задача добавлена:\n"
+        f"<b>{data['title']}</b>\n"
+        f"День недели: {WD_FULL[weekday_idx]}",
+        parse_mode="HTML",
+        reply_markup=kb,
+    )
+    await state.clear()
+
+@router.callback_query(lambda c: c.data == "shift_list_tasks")
+@admin_only
+async def shift_list_tasks(callback: types.CallbackQuery, state: FSMContext):
+    async with SessionLocal() as session:
+        result = await session.execute(
+            select(ShiftTaskTemplate).order_by(ShiftTaskTemplate.weekday, ShiftTaskTemplate.id)
+        )
+        tasks = result.scalars().all()
+
+    if not tasks:
+        await callback.message.answer("Пока нет задач.")
+        await callback.answer()
+        return
+
+    wd_map = ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"]
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(
+                text=f"{'✅' if t.is_active else '⛔'} [{wd_map[t.weekday]}] {t.title[:25]}",
+                callback_data=f"shift_task_{t.id}"
+            )]
+            for t in tasks
+        ]
+    )
+    await callback.message.answer("Выберите задачу для редактирования:", reply_markup=kb)
+    await callback.answer()
+@router.callback_query(lambda c: c.data and c.data.startswith("shift_task_"))
+@admin_only
+async def shift_task_detail(callback: types.CallbackQuery, state: FSMContext):
+    task_id = int(callback.data.split("_")[-1])
+    async with SessionLocal() as session:
+        task = await session.get(ShiftTaskTemplate, task_id)
+
+    if not task:
+        await callback.answer("Задача не найдена", show_alert=True)
+        return
+
+    wd_map = ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"]
+    text = (
+        f"<b>{task.title}</b>\n"
+        f"День недели: {wd_map[task.weekday]}\n"
+        f"Статус: {'✅ активна' if task.is_active else '⛔ выключена'}\n\n"
+        f"{task.description or ''}"
+    )
+
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(
+                text="📝 Изменить текст", callback_data=f"shift_edit_title_{task.id}"
+            )],
+            [InlineKeyboardButton(
+                text="📅 Изменить день недели", callback_data=f"shift_edit_wd_{task.id}"
+            )],
+            [InlineKeyboardButton(
+                text="🔁 Вкл/выкл", callback_data=f"shift_toggle_{task.id}"
+            )],
+            [InlineKeyboardButton(
+                text="🗑 Удалить", callback_data=f"shift_delete_{task.id}"
+            )],
+        ]
+    )
+
+    await callback.message.answer(text, parse_mode="HTML", reply_markup=kb)
+    await callback.answer()
+@router.callback_query(lambda c: c.data.startswith("shift_toggle_"))
+@admin_only
+async def shift_task_toggle(callback: types.CallbackQuery, state: FSMContext):
+    task_id = int(callback.data.split("_")[-1])
+    async with SessionLocal() as session:
+        task = await session.get(ShiftTaskTemplate, task_id)
+        if not task:
+            await callback.answer("Задача не найдена", show_alert=True)
+            return
+        task.is_active = not task.is_active
+        await session.commit()
+    await callback.answer("Статус задачи обновлён.", show_alert=False)
+@router.callback_query(lambda c: c.data.startswith("shift_delete_"))
+@admin_only
+async def shift_task_delete(callback: types.CallbackQuery, state: FSMContext):
+    task_id = int(callback.data.split("_")[-1])
+    async with SessionLocal() as session:
+        task = await session.get(ShiftTaskTemplate, task_id)
+        if not task:
+            await callback.answer("Задача не найдена", show_alert=True)
+            return
+        await session.delete(task)
+        await session.commit()
+    await callback.message.answer("🗑 Задача и её инстансы удалены.")
+    await callback.answer()
+@router.callback_query(lambda c: c.data.startswith("shift_edit_title_"))
+@admin_only
+async def shift_edit_title_start(callback: types.CallbackQuery, state: FSMContext):
+    task_id = int(callback.data.split("_")[-1])
+    await state.update_data(edit_task_id=task_id)
+    await state.set_state(EditShiftTaskForm.title)
+    await callback.message.answer("Введите новый текст задачи:")
+    await callback.answer()
+
+
+@router.message(EditShiftTaskForm.title)
+@admin_only
+async def shift_edit_title_save(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    task_id = data.get("edit_task_id")
+    async with SessionLocal() as session:
+        task = await session.get(ShiftTaskTemplate, task_id)
+        if not task:
+            await message.answer("Задача не найдена.")
+        else:
+            task.title = message.text.strip()
+            await session.commit()
+            await message.answer("✅ Текст задачи обновлён.")
+    await state.clear()
+@router.callback_query(lambda c: c.data.startswith("shift_edit_wd_"))
+@admin_only
+async def shift_edit_wd_start(callback: types.CallbackQuery, state: FSMContext):
+    task_id = int(callback.data.split("_")[-1])
+    await state.update_data(edit_task_id=task_id)
+    await state.set_state(EditShiftTaskForm.weekday)
+    await callback.message.answer("Введите новый день недели (0–6):")
+    await callback.answer()
+
+
+@router.message(EditShiftTaskForm.weekday)
+@admin_only
+async def shift_edit_wd_save(message: types.Message, state: FSMContext):
+    text = message.text.strip()
+    if not text.isdigit() or not (0 <= int(text) <= 6):
+        await message.answer("Нужно число от 0 до 6. Попробуйте ещё раз.")
+        return
+
+    data = await state.get_data()
+    task_id = data.get("edit_task_id")
+    async with SessionLocal() as session:
+        task = await session.get(ShiftTaskTemplate, task_id)
+        if not task:
+            await message.answer("Задача не найдена.")
+        else:
+            task.weekday = int(text)
+            await session.commit()
+            await message.answer("✅ День недели обновлён.")
+    await state.clear()

@@ -45,7 +45,7 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    url = config.get_main_option("postgresql://neondb_owner:npg_7dNHW5nIGUPm@ep-still-frog-a94gtt08-pooler.gwc.azure.neon.tech/neondb")
+    url = config.get_main_option("sqlalchemy.url")
     context.configure(
         url=url,
         target_metadata=target_metadata,

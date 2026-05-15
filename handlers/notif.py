@@ -1,18 +1,12 @@
 import asyncio
 import random
-from aiogram import Bot
-from sqlalchemy.ext.asyncio import AsyncSession
 from models.db_models import User, SessionLocal
 import logging
-from config import API_TOKEN, ADMIN_ID
-from aiogram.client.default import DefaultBotProperties
+from config import ADMIN_ID
 from aiogram.enums import ParseMode
 from sqlalchemy.future import select
-import html
 import re
 
-# Ваш токен API
-bot = Bot(token=API_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 logger = logging.getLogger(__name__)
 
 # Функция для получения всех пользователей из базы данных
@@ -29,11 +23,9 @@ def escape_markdown_v2(text: str) -> str:
 
 # Функция для отправки уведомления конкретному пользователю
 async def send_notification(telegram_id: int, message: str):
+    from api.bot import bot
     try:
-        # Экранируем сообщение
         safe_message = escape_markdown_v2(message)
-        
-        # Используем ParseMode.MARKDOWN_V2
         await bot.send_message(telegram_id, safe_message, parse_mode=ParseMode.MARKDOWN_V2)
     except Exception as e:
         logger.error(f"Не удалось отправить сообщение пользователю {telegram_id}: {e}")

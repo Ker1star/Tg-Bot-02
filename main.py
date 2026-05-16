@@ -20,7 +20,12 @@ async def main():
     logging.info("База данных инициализирована")
 
     scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
-    scheduler.add_job(start_shift_auto, CronTrigger(hour=8, minute=1), name="start_shift_morning")
+    scheduler.add_job(
+        start_shift_auto,
+        CronTrigger(hour=8, minute=1),
+        name="start_shift_morning",
+        misfire_grace_time=3600,
+    )
     scheduler.start()
     logging.info("Scheduler started")
 

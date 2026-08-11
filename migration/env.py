@@ -12,9 +12,30 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from models.db_models import Base
 
 
+def _sync_database_url() -> str:
+    """DATABASE_URL из .env, приведённый к синхронному виду для alembic.
+
+    В .env строка хранится для asyncpg (postgresql+asyncpg://...?ssl=require),
+    а миграции ходят через psycopg2 — поэтому убираем драйвер и параметры
+    запроса, а SSL (обязательный для Neon) выставляем явно.
+    """
+    from urllib.parse import urlsplit, urlunsplit
+
+    from dotenv import load_dotenv
+
+    load_dotenv()
+    raw = os.getenv("DATABASE_URL")
+    if not raw:
+        raise RuntimeError("DATABASE_URL не задан — добавьте его в .env")
+
+    parts = urlsplit(raw.replace("+asyncpg", ""))
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, "sslmode=require", ""))
+
+
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
+config.set_main_option("sqlalchemy.url", _sync_database_url())
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.

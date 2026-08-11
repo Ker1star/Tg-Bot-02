@@ -45,7 +45,7 @@ def get_admin_panel_keyboard() -> ReplyKeyboardMarkup:
         [KeyboardButton(text="Создать тест"), KeyboardButton(text="Добавить вопрос")],
         [KeyboardButton(text="Редактировать вопрос"), KeyboardButton(text="Отслеживание прогресса"), KeyboardButton(text="Просмотр ошибок")],
         [KeyboardButton(text="Удалить тест"), KeyboardButton(text="Удалить вопрос"), KeyboardButton(text="Сброс прогресса")],
-        [KeyboardButton(text="Задачи смены")],
+        [KeyboardButton(text="Задачи смены"), KeyboardButton(text="Графики смен")],
         [KeyboardButton(text="Назад"), KeyboardButton(text="Отмена")]
     ]
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)

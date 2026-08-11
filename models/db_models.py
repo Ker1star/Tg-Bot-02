@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, BigInteger, String, DateTime, ForeignKey, Boolean, Text, Date, Time
+from sqlalchemy import create_engine, Column, Integer, BigInteger, String, DateTime, ForeignKey, Boolean, Text, Date, Time, Float
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 from datetime import datetime
@@ -33,8 +33,31 @@ class User(Base):
     registration_date = Column(DateTime, default=datetime.utcnow)
     is_active = Column(Boolean, default=True)
 
+    # Составляющие веса сотрудника для графика (см. handlers/schedule.py).
+    # exam_score: 0.15 стажёр, 0.25 после сдачи меню, 0.5 после сдачи всех
+    # экзаменов/практической проверки — выставляется администратором вручную.
+    exam_score = Column(Float, nullable=False, default=0.15, server_default="0.15")
+    # admin_score: оценка администратора, 0..0.5, обновляется ежемесячно.
+    admin_score = Column(Float, nullable=False, default=0.0, server_default="0")
+    hire_date = Column(Date, nullable=True)
+
     answers = relationship("Answer", back_populates="user", cascade="all, delete-orphan")
     Userprogress = relationship("UserProgress", back_populates="user", cascade="all, delete-orphan")
+
+    @property
+    def tenure_bonus(self) -> float:
+        """+0.10 веса за каждые полные полгода стажа с hire_date."""
+        if not self.hire_date:
+            return 0.0
+        today = datetime.utcnow().date()
+        months = (today.year - self.hire_date.year) * 12 + (today.month - self.hire_date.month)
+        return (months // 6) * 0.10
+
+    @property
+    def weight(self) -> float:
+        """Итоговый вес = экзамен/практика + оценка администратора + стаж.
+        Не хранится в базе, чтобы не протухал по мере роста стажа — считается на лету."""
+        return round((self.exam_score or 0.0) + (self.admin_score or 0.0) + self.tenure_bonus, 2)
 
 class ShiftTaskTemplate(Base):
     __tablename__ = "shift_task_templates"
@@ -139,7 +162,100 @@ class Exam(Base):
     name = Column(String(255), nullable=False)
     file = Column(String(1024), nullable=False)
     is_active = Column(Boolean, default=True)
-    
+
+
+# --- Графики смен -----------------------------------------------------------
+
+class SchedulePeriod(Base):
+    """Двухнедельный период, на который собираем доступность и строим график."""
+    __tablename__ = 'schedule_periods'
+    id = Column(Integer, primary_key=True, index=True)
+    start_date = Column(Date, nullable=False)
+    end_date = Column(Date, nullable=False)
+    # collecting -> опрос доступности идёт; generating -> строим график;
+    # published -> график разослан
+    status = Column(String(20), nullable=False, default='collecting', server_default='collecting')
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    responses = relationship("AvailabilityResponse", back_populates="period", cascade="all, delete-orphan")
+    assignments = relationship("ShiftAssignment", back_populates="period", cascade="all, delete-orphan")
+
+
+class AvailabilityResponse(Base):
+    """Ответ одного сотрудника на опрос доступности за период (мини-досье)."""
+    __tablename__ = 'availability_responses'
+    id = Column(Integer, primary_key=True, index=True)
+    period_id = Column(Integer, ForeignKey('schedule_periods.id'), nullable=False)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    comment = Column(Text, nullable=True)  # свободные пожелания, вопрос 4
+    submitted_at = Column(DateTime, default=datetime.utcnow)
+
+    period = relationship("SchedulePeriod", back_populates="responses")
+    user = relationship("User")
+    constraints = relationship("AvailabilityConstraint", back_populates="response", cascade="all, delete-orphan")
+
+
+class AvailabilityConstraint(Base):
+    """Одно ограничение на конкретную дату: выходной / раннее или позднее время.
+
+    ВАЖНО: вопросы 2 и 3 из майндмэпы в переданном виде звучат одинаково
+    ("с X часов") — не до конца понятно, вопрос 3 про "не раньше 18" или
+    "не позже 18" (уйти пораньше). Схема ниже держит earliest_start и
+    latest_end раздельно, чтобы не переделывать её, когда смысл уточнится.
+    """
+    __tablename__ = 'availability_constraints'
+    id = Column(Integer, primary_key=True, index=True)
+    response_id = Column(Integer, ForeignKey('availability_responses.id'), nullable=False)
+    date = Column(Date, nullable=False)
+    # day_off | earliest_start | latest_end
+    constraint_type = Column(String(20), nullable=False)
+    time_value = Column(Time, nullable=True)  # null для day_off
+
+    response = relationship("AvailabilityResponse", back_populates="constraints")
+
+
+class ShiftAssignment(Base):
+    """Один сотрудник на одной смене в рамках периода — единица графика."""
+    __tablename__ = 'shift_assignments'
+    id = Column(Integer, primary_key=True, index=True)
+    period_id = Column(Integer, ForeignKey('schedule_periods.id'), nullable=False)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    date = Column(Date, nullable=False)
+    start_time = Column(Time, nullable=False)
+    end_time = Column(Time, nullable=False)
+    # planned -> обычная смена; needs_replacement -> ищем замену;
+    # replaced -> замена найдена; confirmed -> подтверждено администратором
+    status = Column(String(20), nullable=False, default='planned', server_default='planned')
+    replaced_by_user_id = Column(Integer, ForeignKey('users.id'), nullable=True)
+    # для «красных ячеек» — смена не до конца соответствует условиям
+    is_flagged = Column(Boolean, nullable=False, default=False, server_default='false')
+    flag_reason = Column(Text, nullable=True)
+
+    period = relationship("SchedulePeriod", back_populates="assignments")
+    user = relationship("User", foreign_keys=[user_id])
+    replaced_by = relationship("User", foreign_keys=[replaced_by_user_id])
+    broadcasts = relationship("ReplacementBroadcastMessage", back_populates="assignment", cascade="all, delete-orphan")
+
+
+class ReplacementBroadcastMessage(Base):
+    """Сообщение с предложением о замене, отправленное конкретному сотруднику.
+
+    Нужна отдельная запись на каждого получателя, чтобы после того как
+    кто-то нажал «я выйду», можно было отредактировать/убрать кнопку у всех
+    остальных, кому ушла та же рассылка.
+    """
+    __tablename__ = 'replacement_broadcast_messages'
+    id = Column(Integer, primary_key=True, index=True)
+    assignment_id = Column(Integer, ForeignKey('shift_assignments.id'), nullable=False)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    chat_id = Column(BigInteger, nullable=False)
+    message_id = Column(Integer, nullable=False)
+    sent_at = Column(DateTime, default=datetime.utcnow)
+
+    assignment = relationship("ShiftAssignment", back_populates="broadcasts")
+    user = relationship("User")
+
+
 # Инициализация базы данных
 async def init_db():
     async with engine.begin() as conn:

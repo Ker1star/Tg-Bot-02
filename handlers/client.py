@@ -24,6 +24,7 @@ admin_ids_list = [int(admin_id.strip()) for admin_id in admin_ids.split(',')]
 def get_main_menu_keyboard() -> ReplyKeyboardMarkup:
     keyboard = [
         [KeyboardButton(text="📚 Учебные материалы")],
+        [KeyboardButton(text="📅 Мой график"), KeyboardButton(text="🔄 Нужна замена")],
         [KeyboardButton(text="📝 Пройти тест"), KeyboardButton(text="❓ Помощь")],
         [KeyboardButton(text="❌ Отмена")]
     ]
@@ -74,6 +75,7 @@ async def start_handler(message: types.Message, state: FSMContext):
 
     keyboard = [
         [KeyboardButton(text="📚 Учебные материалы"), KeyboardButton(text="📊 Мой прогресс")],
+        [KeyboardButton(text="📅 Мой график"), KeyboardButton(text="🔄 Нужна замена")],
         [KeyboardButton(text="📝 Пройти тест"), KeyboardButton(text="❓ Помощь")],
         [KeyboardButton(text="❌ Отмена")],
     ]

@@ -8,6 +8,7 @@ from api.bot import bot, dp
 from handlers.admin import router as admin_router
 from handlers.client import router as client_router
 from handlers.shift import router as shift_router, start_shift_auto
+from handlers.schedule import router as schedule_router
 from utils.database import init_db
 
 
@@ -15,6 +16,7 @@ async def main():
     dp.include_router(admin_router)
     dp.include_router(client_router)
     dp.include_router(shift_router)
+    dp.include_router(schedule_router)
 
     await init_db()
     logging.info("База данных инициализирована")

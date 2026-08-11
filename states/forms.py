@@ -59,3 +59,9 @@ class AddExamForm(StatesGroup):
 class BulkAddQuestionsForm(StatesGroup):
     text = State()
 
+class AvailabilitySurveyForm(StatesGroup):
+    day_off_dates = State()
+    late_from_13 = State()
+    late_from_18 = State()
+    wishes = State()
+

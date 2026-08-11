@@ -24,7 +24,7 @@ async def main():
     scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
     scheduler.add_job(
         start_shift_auto,
-        CronTrigger(hour=11, minute=1),
+        CronTrigger(hour=8, minute=30),
         name="start_shift_morning",
         misfire_grace_time=3600,
     )

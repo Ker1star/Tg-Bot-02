@@ -65,3 +65,6 @@ class AvailabilitySurveyForm(StatesGroup):
     late_from_18 = State()
     wishes = State()
 
+class HireDateForm(StatesGroup):
+    value = State()
+

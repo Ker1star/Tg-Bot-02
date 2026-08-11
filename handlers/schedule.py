@@ -26,7 +26,7 @@ from sqlalchemy.future import select
 from config import ADMIN_ID, WAITER_CHAT_ID
 from handlers.utils import admin_only
 from handlers.notif import send_admin_notification
-from states.forms import AvailabilitySurveyForm
+from states.forms import AvailabilitySurveyForm, HireDateForm
 from models.db_models import (
     SessionLocal,
     User,
@@ -91,9 +91,10 @@ def _skip_keyboard() -> InlineKeyboardMarkup:
 # --- Кто вообще считается персоналом для графика -----------------------------
 # По умолчанию is_active=True ставится всем, кто хоть раз нажал /start, и
 # нигде в боте не сбрасывается — то есть само по себе это поле не значит
-# «работает сейчас». Три команды ниже дают админу реальный рычаг: увидеть
+# «работает сейчас». Команды и кнопки ниже дают админу реальный рычаг: увидеть
 # список и вручную отметить, кто в пуле кандидатов на смены, а кто нет.
-# Администраторы (ADMIN_ID) в пул смен не попадают в любом случае.
+# Администраторы участвуют в графике наравне со всеми (они тоже работают
+# смены); ADMIN_ID отвечает только за доступ к управлению.
 
 @router.message(Command("staff_list"))
 @admin_only
@@ -159,7 +160,7 @@ async def _do_new_period(reply_to: types.Message):
         await session.commit()
         await session.refresh(period)
 
-        result = await session.execute(select(User).filter(User.is_active == True, User.telegram_id.notin_(ADMIN_ID)))
+        result = await session.execute(select(User).filter(User.is_active == True))
         users = result.scalars().all()
 
     from api.bot import bot
@@ -373,7 +374,7 @@ async def _do_generate_schedule(reply_to: types.Message, period_id: int):
             await message.answer("Период не найден.")
             return
 
-        result = await session.execute(select(User).filter(User.is_active == True, User.telegram_id.notin_(ADMIN_ID)))
+        result = await session.execute(select(User).filter(User.is_active == True))
         waiters = result.scalars().all()
         availability = await _availability_map(session, period_id)
 
@@ -633,11 +634,183 @@ def _staff_keyboard(staff) -> InlineKeyboardMarkup:
         else:
             seen = "не заходил(а)"
         rows.append([InlineKeyboardButton(
-            text=f"{'✅' if u.is_active else '⛔'} {u.first_name} · {seen}",
-            callback_data=f"staff_toggle_{u.id}",
+            text=f"{'✅' if u.is_active else '⛔'} {u.first_name} · вес {u.weight} · {seen}",
+            callback_data=f"staff_card_{u.id}",
         )])
     rows.append([InlineKeyboardButton(text="⛔ Выключить всех (начать с нуля)", callback_data="staff_all_off")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+# --- Карточка сотрудника: вес и участие в графике ----------------------------
+# Вес = экзамен/практика (ставит администратор после проверки в зале)
+#     + оценка администратора (обновляется ежемесячно)
+#     + надбавка за стаж (+0.10 за каждые полные полгода от даты приёма).
+
+_EXAM_LEVELS = [
+    (15, "0.15 — стажёр"),
+    (25, "0.25 — сдал меню"),
+    (50, "0.50 — сдал всё"),
+]
+_ADMIN_LEVELS = [(0, "0"), (10, "0.1"), (20, "0.2"), (30, "0.3"), (40, "0.4"), (50, "0.5")]
+
+
+def _staff_card_text(user: User) -> str:
+    hire = f"{user.hire_date:%d.%m.%Y}" if user.hire_date else "не указана"
+    bonus = user.tenure_bonus
+    return (
+        f"👤 <b>{user.first_name} {user.last_name or ''}</b>\n\n"
+        f"В графике: {'✅ да' if user.is_active else '⛔ нет'}\n"
+        f"Экзамен / практика: <b>{user.exam_score}</b>\n"
+        f"Оценка администратора: <b>{user.admin_score}</b>\n"
+        f"Дата приёма: {hire} (надбавка за стаж +{bonus:.2f})\n\n"
+        f"<b>Итоговый вес: {user.weight}</b>"
+    )
+
+
+def _staff_card_keyboard(user: User) -> InlineKeyboardMarkup:
+    rows = [[InlineKeyboardButton(
+        text="⛔ Убрать из графика" if user.is_active else "✅ Вернуть в график",
+        callback_data=f"staff_toggle_{user.id}",
+    )]]
+
+    rows.append([InlineKeyboardButton(text="— Экзамен / практика —", callback_data="staff_noop")])
+    rows.append([
+        InlineKeyboardButton(
+            text=("• " if abs(user.exam_score - val / 100) < 0.001 else "") + label,
+            callback_data=f"staff_exam_{user.id}_{val}",
+        )
+        for val, label in _EXAM_LEVELS
+    ])
+
+    rows.append([InlineKeyboardButton(text="— Оценка администратора —", callback_data="staff_noop")])
+    rows.append([
+        InlineKeyboardButton(
+            text=("• " if abs(user.admin_score - val / 100) < 0.001 else "") + label,
+            callback_data=f"staff_adm_{user.id}_{val}",
+        )
+        for val, label in _ADMIN_LEVELS
+    ])
+
+    rows.append([InlineKeyboardButton(text="📅 Указать дату приёма", callback_data=f"staff_hire_{user.id}")])
+    rows.append([InlineKeyboardButton(text="⬅️ К списку", callback_data="staff_back")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def _show_staff_card(callback: types.CallbackQuery, user_id: int):
+    async with SessionLocal() as session:
+        user = await session.get(User, user_id)
+        if not user:
+            await callback.answer("Сотрудник не найден.", show_alert=True)
+            return
+        text, kb = _staff_card_text(user), _staff_card_keyboard(user)
+
+    try:
+        await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+    except TelegramBadRequest:
+        await callback.message.answer(text, reply_markup=kb, parse_mode="HTML")
+
+
+@router.callback_query(lambda c: c.data == "staff_noop")
+async def staff_noop_cb(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("staff_card_"))
+async def staff_card_cb(callback: types.CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_ID:
+        await callback.answer("Нет доступа.", show_alert=True)
+        return
+    await callback.answer()
+    await _show_staff_card(callback, int(callback.data.split("_")[-1]))
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("staff_exam_"))
+async def staff_exam_cb(callback: types.CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_ID:
+        await callback.answer("Нет доступа.", show_alert=True)
+        return
+    _, _, user_id, value = callback.data.split("_")
+    async with SessionLocal() as session:
+        user = await session.get(User, int(user_id))
+        if user:
+            user.exam_score = int(value) / 100
+            await session.commit()
+    await callback.answer(f"Экзамен: {int(value) / 100}")
+    await _show_staff_card(callback, int(user_id))
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("staff_adm_"))
+async def staff_adm_cb(callback: types.CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_ID:
+        await callback.answer("Нет доступа.", show_alert=True)
+        return
+    _, _, user_id, value = callback.data.split("_")
+    async with SessionLocal() as session:
+        user = await session.get(User, int(user_id))
+        if user:
+            user.admin_score = int(value) / 100
+            await session.commit()
+    await callback.answer(f"Оценка администратора: {int(value) / 100}")
+    await _show_staff_card(callback, int(user_id))
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("staff_hire_"))
+async def staff_hire_cb(callback: types.CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_ID:
+        await callback.answer("Нет доступа.", show_alert=True)
+        return
+    user_id = int(callback.data.split("_")[-1])
+    await state.set_state(HireDateForm.value)
+    await state.update_data(hire_user_id=user_id)
+    await callback.answer()
+    await callback.message.answer("Введите дату приёма на работу в формате ДД.ММ.ГГГГ (например 05.03.2025):")
+
+
+@router.message(HireDateForm.value)
+async def staff_hire_input(message: types.Message, state: FSMContext):
+    raw = (message.text or "").strip()
+    try:
+        parsed = datetime.strptime(raw, "%d.%m.%Y").date()
+    except ValueError:
+        await message.answer("Не понял дату. Нужен формат ДД.ММ.ГГГГ, например 05.03.2025.")
+        return
+    if parsed > date.today():
+        await message.answer("Дата приёма не может быть в будущем. Попробуйте ещё раз.")
+        return
+
+    data = await state.get_data()
+    async with SessionLocal() as session:
+        user = await session.get(User, data["hire_user_id"])
+        if not user:
+            await message.answer("Сотрудник не найден.")
+            await state.clear()
+            return
+        user.hire_date = parsed
+        await session.commit()
+        text, kb = _staff_card_text(user), _staff_card_keyboard(user)
+
+    await state.clear()
+    await message.answer(text, reply_markup=kb, parse_mode="HTML")
+
+
+@router.callback_query(lambda c: c.data == "staff_back")
+async def staff_back_cb(callback: types.CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_ID:
+        await callback.answer("Нет доступа.", show_alert=True)
+        return
+    await callback.answer()
+    async with SessionLocal() as session:
+        staff = await _load_staff(session)
+    active = sum(1 for u, _ in staff if u.is_active)
+    try:
+        await callback.message.edit_text(
+            f"👥 <b>Сотрудники</b> — в графике {active} из {len(staff)}.\n"
+            "Нажмите на человека, чтобы открыть карточку: участие в графике, вес, дата приёма.",
+            reply_markup=_staff_keyboard(staff),
+            parse_mode="HTML",
+        )
+    except TelegramBadRequest:
+        pass
 
 
 async def _load_staff(session):
@@ -656,7 +829,7 @@ async def _load_staff(session):
         .outerjoin(Answer, Answer.user_id == User.id)
         .group_by(User.id)
     )
-    rows = [(u, ts) for u, ts in result.all() if u.telegram_id not in ADMIN_ID]
+    rows = list(result.all())
     rows.sort(key=lambda pair: (pair[1] is None, -(pair[1].timestamp() if pair[1] else 0)))
     return rows
 
@@ -672,9 +845,9 @@ async def _render_staff_list(message: types.Message):
     active = sum(1 for u, _ in staff if u.is_active)
     await message.answer(
         f"👥 <b>Сотрудники</b> — в графике {active} из {len(staff)}.\n"
-        "Рядом с именем — когда человек последний раз что-то делал в боте "
-        "(по ответам на тесты, эта отметка переживает сброс прогресса).\n"
-        "Нажмите на человека, чтобы включить/исключить его из графика.",
+        "В строке: участие в графике, текущий вес и когда человек последний раз "
+        "что-то делал в боте (по ответам на тесты — эта отметка переживает сброс прогресса).\n"
+        "Нажмите на человека, чтобы открыть карточку и настроить вес.",
         reply_markup=_staff_keyboard(staff),
         parse_mode="HTML",
     )
@@ -687,9 +860,7 @@ async def staff_all_off_cb(callback: types.CallbackQuery, state: FSMContext):
         return
 
     async with SessionLocal() as session:
-        await session.execute(
-            update(User).where(User.telegram_id.notin_(ADMIN_ID)).values(is_active=False)
-        )
+        await session.execute(update(User).values(is_active=False))
         await session.commit()
         staff = await _load_staff(session)
 
@@ -717,13 +888,8 @@ async def staff_toggle_cb(callback: types.CallbackQuery, state: FSMContext):
         new_state = user.is_active
         name = user.first_name
 
-        staff = await _load_staff(session)
-
-    try:
-        await callback.message.edit_reply_markup(reply_markup=_staff_keyboard(staff))
-    except TelegramBadRequest:
-        pass
     await callback.answer(f"{name}: {'в графике' if new_state else 'исключён(а)'}")
+    await _show_staff_card(callback, user_id)
 
 
 @router.callback_query(lambda c: c.data == "sched_pending")
@@ -838,7 +1004,7 @@ async def _broadcast_replacement(assignment_id: int, expand: bool):
             return
         original = await session.get(User, assignment.user_id)
 
-        result = await session.execute(select(User).filter(User.is_active == True, User.telegram_id.notin_(ADMIN_ID)))
+        result = await session.execute(select(User).filter(User.is_active == True))
         all_users = result.scalars().all()
 
         busy_that_day = set(

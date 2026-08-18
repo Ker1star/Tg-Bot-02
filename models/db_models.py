@@ -256,6 +256,55 @@ class ReplacementBroadcastMessage(Base):
     user = relationship("User")
 
 
+# --- Открытие/закрытие точки ------------------------------------------------
+
+class ChecklistItemTemplate(Base):
+    """Один пункт чек-листа открытия/закрытия. Порядок и состав фиксированы
+    кодом (см. handlers/checklist_seed.py) — редактируется только
+    reference_file_id, и то через админскую команду."""
+    __tablename__ = 'checklist_item_templates'
+    id = Column(Integer, primary_key=True, index=True)
+    location = Column(String(32), nullable=False, index=True)  # 'el_gusto' | 'marta' (второй пока не используется)
+    shift_type = Column(String(10), nullable=False)  # 'open' | 'close'
+    step_key = Column(String(64), nullable=False)  # стабильный ключ пункта, не меняется между релизами
+    order_index = Column(Integer, nullable=False)
+    title = Column(String(255), nullable=False)
+    prompt_text = Column(Text, nullable=True)  # доп. подсказка сотруднику (например про руки/украшения)
+    # 'photo' | 'multi_photo' | 'text' | 'multi_text'
+    item_type = Column(String(16), nullable=False)
+    needs_reference = Column(Boolean, nullable=False, default=False)
+    reference_file_id = Column(String(255), nullable=True)  # telegram file_id, задаётся админом один раз
+
+
+class ChecklistSubmission(Base):
+    __tablename__ = 'checklist_submissions'
+    id = Column(Integer, primary_key=True, index=True)
+    location = Column(String(32), nullable=False)
+    shift_type = Column(String(10), nullable=False)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    status = Column(String(16), nullable=False, default='in_progress')  # in_progress | completed
+    started_at = Column(DateTime, default=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
+
+    user = relationship("User")
+    answers = relationship("ChecklistAnswer", back_populates="submission", cascade="all, delete-orphan")
+
+
+class ChecklistAnswer(Base):
+    """Ответ на один пункт. Для multi_photo/multi_text пунктов — несколько
+    строк на один item_id (по одной на каждое присланное фото/сообщение)."""
+    __tablename__ = 'checklist_answers'
+    id = Column(Integer, primary_key=True, index=True)
+    submission_id = Column(Integer, ForeignKey('checklist_submissions.id'), nullable=False)
+    item_id = Column(Integer, ForeignKey('checklist_item_templates.id'), nullable=False)
+    text_value = Column(Text, nullable=True)
+    photo_file_id = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    submission = relationship("ChecklistSubmission", back_populates="answers")
+    item = relationship("ChecklistItemTemplate")
+
+
 # Инициализация базы данных
 async def init_db():
     async with engine.begin() as conn:

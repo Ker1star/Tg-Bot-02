@@ -9,6 +9,7 @@ from handlers.admin import router as admin_router
 from handlers.client import router as client_router
 from handlers.shift import router as shift_router, start_shift_auto
 from handlers.schedule import router as schedule_router
+from handlers.checklist import router as checklist_router, ensure_checklist_seeded
 from utils.database import init_db
 
 
@@ -17,9 +18,13 @@ async def main():
     dp.include_router(client_router)
     dp.include_router(shift_router)
     dp.include_router(schedule_router)
+    dp.include_router(checklist_router)
 
     await init_db()
     logging.info("База данных инициализирована")
+
+    await ensure_checklist_seeded()
+    logging.info("Чек-лист открытия/закрытия проинициализирован")
 
     scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
     scheduler.add_job(
